@@ -1,0 +1,213 @@
+3.9.2
+CUDA is available: True
+/bettik/PROJECTS/pr-gin5_aini/fehrdelt/datasets/Dallas_ADC_rotated_resampled_registered/sub-3727_ses-wave1_ADC.nii.gz
+RESUMING TRAINING from epoch {last_epoch}
+3.9.2
+CUDA is available: True
+/bettik/PROJECTS/pr-gin5_aini/fehrdelt/datasets/Dallas_ADC_rotated_resampled_registered/sub-3727_ses-wave1_ADC.nii.gz
+RESUMING TRAINING from epoch {last_epoch}
+saved new best metric model
+current epoch: 1446 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 1446
+saved new best metric model
+current epoch: 1470 current val loss: 0.0062
+best val loss: 0.0062 at epoch: 1470
+saved new best metric model
+current epoch: 1707 current val loss: 0.0075
+best val loss: 0.0075 at epoch: 1707
+saved new best metric model
+current epoch: 2184 current val loss: 0.0073
+best val loss: 0.0073 at epoch: 2184
+saved new best metric model
+current epoch: 2499 current val loss: 0.0074
+best val loss: 0.0074 at epoch: 2499
+saved new best metric model
+current epoch: 2544 current val loss: 0.0077
+best val loss: 0.0077 at epoch: 2544
+saved new best metric model
+current epoch: 2778 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 2778
+saved new best metric model
+current epoch: 2844 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 2844
+saved new best metric model
+current epoch: 2877 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 2877
+saved new best metric model
+current epoch: 3021 current val loss: 0.0067
+best val loss: 0.0067 at epoch: 3021
+saved new best metric model
+current epoch: 3123 current val loss: 0.0074
+best val loss: 0.0074 at epoch: 3123
+saved new best metric model
+current epoch: 3147 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 3147
+saved new best metric model
+current epoch: 3240 current val loss: 0.0068
+best val loss: 0.0068 at epoch: 3240
+saved new best metric model
+current epoch: 3276 current val loss: 0.0050
+best val loss: 0.0050 at epoch: 3276
+saved new best metric model
+current epoch: 3414 current val loss: 0.0072
+best val loss: 0.0072 at epoch: 3414
+saved new best metric model
+current epoch: 3585 current val loss: 0.0075
+best val loss: 0.0075 at epoch: 3585
+saved new best metric model
+current epoch: 3618 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 3618
+saved new best metric model
+current epoch: 3675 current val loss: 0.0072
+best val loss: 0.0072 at epoch: 3675
+saved new best metric model
+current epoch: 3714 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 3714
+saved new best metric model
+current epoch: 3729 current val loss: 0.0065
+best val loss: 0.0065 at epoch: 3729
+saved new best metric model
+current epoch: 3765 current val loss: 0.0077
+best val loss: 0.0077 at epoch: 3765
+saved new best metric model
+current epoch: 3825 current val loss: 0.0060
+best val loss: 0.0060 at epoch: 3825
+saved new best metric model
+current epoch: 3864 current val loss: 0.0071
+best val loss: 0.0071 at epoch: 3864
+saved new best metric model
+current epoch: 3873 current val loss: 0.0077
+best val loss: 0.0077 at epoch: 3873
+saved new best metric model
+current epoch: 3918 current val loss: 0.0063
+best val loss: 0.0063 at epoch: 3918
+saved new best metric model
+current epoch: 3954 current val loss: 0.0066
+best val loss: 0.0066 at epoch: 3954
+saved new best metric model
+current epoch: 4014 current val loss: 0.0057
+best val loss: 0.0057 at epoch: 4014
+saved new best metric model
+current epoch: 4122 current val loss: 0.0077
+best val loss: 0.0077 at epoch: 4122
+saved new best metric model
+current epoch: 4125 current val loss: 0.0069
+best val loss: 0.0069 at epoch: 4125
+saved new best metric model
+current epoch: 4179 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 4179
+saved new best metric model
+current epoch: 4269 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 4269
+saved new best metric model
+current epoch: 4299 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 4299
+saved new best metric model
+current epoch: 4314 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 4314
+saved new best metric model
+current epoch: 4323 current val loss: 0.0074
+best val loss: 0.0074 at epoch: 4323
+saved new best metric model
+current epoch: 4353 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 4353
+saved new best metric model
+current epoch: 4455 current val loss: 0.0057
+best val loss: 0.0057 at epoch: 4455
+saved new best metric model
+current epoch: 4539 current val loss: 0.0077
+best val loss: 0.0077 at epoch: 4539
+saved new best metric model
+current epoch: 4560 current val loss: 0.0062
+best val loss: 0.0062 at epoch: 4560
+saved new best metric model
+current epoch: 4575 current val loss: 0.0065
+best val loss: 0.0065 at epoch: 4575
+saved new best metric model
+current epoch: 4656 current val loss: 0.0075
+best val loss: 0.0075 at epoch: 4656
+saved new best metric model
+current epoch: 4683 current val loss: 0.0071
+best val loss: 0.0071 at epoch: 4683
+saved new best metric model
+current epoch: 4719 current val loss: 0.0073
+best val loss: 0.0073 at epoch: 4719
+saved new best metric model
+current epoch: 4770 current val loss: 0.0060
+best val loss: 0.0060 at epoch: 4770
+saved new best metric model
+current epoch: 4779 current val loss: 0.0063
+best val loss: 0.0063 at epoch: 4779
+saved new best metric model
+current epoch: 4818 current val loss: 0.0069
+best val loss: 0.0069 at epoch: 4818
+saved new best metric model
+current epoch: 4845 current val loss: 0.0071
+best val loss: 0.0071 at epoch: 4845
+saved new best metric model
+current epoch: 4860 current val loss: 0.0065
+best val loss: 0.0065 at epoch: 4860
+saved new best metric model
+current epoch: 4905 current val loss: 0.0074
+best val loss: 0.0074 at epoch: 4905
+saved new best metric model
+current epoch: 4986 current val loss: 0.0064
+best val loss: 0.0064 at epoch: 4986
+saved new best metric model
+current epoch: 5031 current val loss: 0.0072
+best val loss: 0.0072 at epoch: 5031
+saved new best metric model
+current epoch: 5040 current val loss: 0.0070
+best val loss: 0.0070 at epoch: 5040
+saved new best metric model
+current epoch: 5085 current val loss: 0.0058
+best val loss: 0.0058 at epoch: 5085
+saved new best metric model
+current epoch: 5106 current val loss: 0.0065
+best val loss: 0.0065 at epoch: 5106
+saved new best metric model
+current epoch: 5196 current val loss: 0.0069
+best val loss: 0.0069 at epoch: 5196
+saved new best metric model
+current epoch: 5223 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 5223
+saved new best metric model
+current epoch: 5274 current val loss: 0.0052
+best val loss: 0.0052 at epoch: 5274
+saved new best metric model
+current epoch: 5436 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 5436
+saved new best metric model
+current epoch: 5475 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 5475
+saved new best metric model
+current epoch: 5538 current val loss: 0.0067
+best val loss: 0.0067 at epoch: 5538
+saved new best metric model
+current epoch: 5577 current val loss: 0.0073
+best val loss: 0.0073 at epoch: 5577
+saved new best metric model
+current epoch: 5613 current val loss: 0.0076
+best val loss: 0.0076 at epoch: 5613
+saved new best metric model
+current epoch: 5637 current val loss: 0.0068
+best val loss: 0.0068 at epoch: 5637
+saved new best metric model
+current epoch: 5829 current val loss: 0.0074
+best val loss: 0.0074 at epoch: 5829
+saved new best metric model
+current epoch: 5835 current val loss: 0.0069
+best val loss: 0.0069 at epoch: 5835
+saved new best metric model
+current epoch: 5844 current val loss: 0.0073
+best val loss: 0.0073 at epoch: 5844
+saved new best metric model
+current epoch: 5883 current val loss: 0.0068
+best val loss: 0.0068 at epoch: 5883
+saved new best metric model
+current epoch: 5910 current val loss: 0.0075
+best val loss: 0.0075 at epoch: 5910
+saved new best metric model
+current epoch: 5943 current val loss: 0.0068
+best val loss: 0.0068 at epoch: 5943
+train completed, total time: 134719.51849675179.
