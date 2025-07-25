@@ -1,14 +1,13 @@
 
 __pycache__/
-
-
+AnoDDPM/.ipynb_checkpoints
+AdnoDDPM/model/
 Monai_Tutorials/
 Tensorboard/
 THOR_DDPM/
 THOR_DDPM_theo_rewrite/
 Unsupervised_Anomaly_Detection_Brain_MRI/
 Best_models/
-data_splits_lists/
 
 # Jupyter Notebook
 .ipynb_checkpoints
