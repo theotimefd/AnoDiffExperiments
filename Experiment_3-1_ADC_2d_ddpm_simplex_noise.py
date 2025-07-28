@@ -645,8 +645,8 @@ def train_epoch(epoch, best_val_epoch_loss, best_val_epoch):
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
         writer.add_scalar("val_loss", val_epoch_loss / (step + 1), epoch)   # moi
 
-        if val_epoch_loss < best_val_epoch_loss:
-            best_val_epoch_loss = val_epoch_loss
+        if val_epoch_loss(step + 1) < best_val_epoch_loss/(step + 1):
+            best_val_epoch_loss = val_epoch_loss/(step + 1)
             best_val_epoch = epoch + 1
             torch.save(
                 model.state_dict(),
@@ -654,11 +654,11 @@ def train_epoch(epoch, best_val_epoch_loss, best_val_epoch):
             )
             print("saved new best metric model")
             print(
-                f"current epoch: {epoch + 1} current val loss: {val_epoch_loss:.4f}"
-                f"\nbest val loss: {best_val_epoch_loss:.4f}"
+                f"current epoch: {epoch + 1} current val loss: {val_epoch_loss/(step + 1):.4f}"
+                f"\nbest val loss: {best_val_epoch_loss/(step + 1):.4f}"
                 f" at epoch: {best_val_epoch}"
             )
-            writer.add_scalar("best_val_loss", best_val_epoch_loss, best_val_epoch)
+            writer.add_scalar("best_val_loss", best_val_epoch_loss/(step + 1), best_val_epoch)
 
             noise = generate_simplex_noise(simplexObj, shape=(1,1,IMAGE_SIZE, IMAGE_SIZE)).to(device)
             noise = noise.to(device)
