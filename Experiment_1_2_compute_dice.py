@@ -264,9 +264,6 @@ for i,(image_batch, mask_batch) in enumerate(tqdm(zip(test_anomaly_loader, test_
     for infer_timesteps in num_timesteps_to_try:
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             infered_image, intermediates = my_sample(test_images, timesteps=infer_timesteps, progress_bar=False)
-            #chain = torch.cat(intermediates, dim=-1)
-            #plt.figure(figsize=(16, 10))
-            #plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
     
         for threshold in thresholds_to_try:
             ano_segmentation = torch.abs(infered_image - test_images) > threshold
@@ -280,7 +277,7 @@ for i,(image_batch, mask_batch) in enumerate(tqdm(zip(test_anomaly_loader, test_
                 iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) # this average is false
 
 #divide everything by the number of images since compute_iou returns a list of iou of size batch_size
-iou_scores_df = iou_scores_df / len(test_anomaly_loader)
+iou_scores_df = iou_scores_df / len(test_anomaly_loader.dataset)
 
 best_iou = iou_scores_df.max().max()
 best_threshold = iou_scores_df.max(axis=0).idxmax()

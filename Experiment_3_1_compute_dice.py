@@ -396,7 +396,7 @@ for i,(image_batch, mask_batch) in enumerate(tqdm(zip(test_anomaly_loader, test_
                 iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) # this average is false
 
 #divide everything by the number of images since compute_iou returns a list of iou of size batch_size
-iou_scores_df = iou_scores_df / len(test_anomaly_loader)
+iou_scores_df = iou_scores_df / len(test_anomaly_loader.dataset)
 
 best_iou = iou_scores_df.max().max()
 best_threshold = iou_scores_df.max(axis=0).idxmax()
@@ -406,4 +406,4 @@ print(f"Best IOU: {best_iou}")
 print(f"Best Threshold: {best_threshold}")
 print(f"Best Number of Timesteps: {best_num_timesteps}")
 
-iou_scores_df.to_csv("Experiment_3-1_scores_iou.csv")
+iou_scores_df.to_csv("Experiment_3_1_scores_iou.csv")
