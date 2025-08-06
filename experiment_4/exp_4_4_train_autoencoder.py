@@ -43,6 +43,7 @@ torch.autograd.set_detect_anomaly(True)
 
 set_determinism(0)
 
+EXPERIMENT_NAME = "exp_4_4_autoencoder"
 #ROOT_DIR = "/home/fehrdelt/bettik/"
 ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 MODELS_DIR = ROOT_DIR+"best_models/experiment_4/"
@@ -203,11 +204,11 @@ autoencoder = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    channels=(32, 64, 64),
+    channels=(32, 64, 64, 128),
     latent_channels=3,
     num_res_blocks=1,
     norm_num_groups=16,
-    attention_levels=(False, False, True),
+    attention_levels=(False, False, True, True),
 )
 autoencoder.to(device)
 
@@ -221,10 +222,10 @@ discriminator = PatchDiscriminator(
     norm=discriminator_norm,
 ).to(device)
 
-trained_g_path = os.path.join(MODELS_DIR, "autoencoder_best.pt")
-trained_d_path = os.path.join(MODELS_DIR, "discriminator_best.pt")
-trained_g_path_last = os.path.join(MODELS_DIR, "autoencoder_last.pt")
-trained_d_path_last = os.path.join(MODELS_DIR, "discriminator_last.pt")
+trained_g_path = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_autoencoder_best.pt")
+trained_d_path = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_discriminator_best.pt")
+trained_g_path_last = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_autoencoder_last.pt")
+trained_d_path_last = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_discriminator_last.pt")
 
 Path(MODELS_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -259,7 +260,7 @@ def KL_loss(z_mu, z_sigma):
 
 adv_weight = 0.01
 perceptual_weight = 0.001
-kl_weight = 1e-6
+kl_weight = 1e-8
 # kl_weight: important hyper-parameter.
 #     If too large, decoder cannot recon good results from latent space.
 #     If too small, latent space will not be regularized enough for the diffusion model
@@ -268,7 +269,7 @@ optimizer_g = torch.optim.Adam(params=autoencoder.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=1e-4)
 
 
-tensorboard_writer = SummaryWriter(ROOT_DIR+"AnoDiffExperiments/Tensorboard/exp_4_2_autoencoder")
+tensorboard_writer = SummaryWriter(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{EXPERIMENT_NAME}")
 
 # Step 4: training
 autoencoder_warm_up_n_epochs = 5

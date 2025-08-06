@@ -9,6 +9,8 @@ THOR_DDPM/
 THOR_DDPM_theo_rewrite/
 Unsupervised_Anomaly_Detection_Brain_MRI/
 Best_models/
+best_models/
+tensorboard/
 
 # Jupyter Notebook
 .ipynb_checkpoints
