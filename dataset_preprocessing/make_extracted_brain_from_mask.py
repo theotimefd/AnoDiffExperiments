@@ -1,17 +1,17 @@
 import os
 import nibabel as nib
 
-#ROOT_DIR = "/home/fehrdelt/bettik/"
-ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
+ROOT_DIR = "/home/fehrdelt/bettik/"
+#ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 
-masks_directory = ROOT_DIR+"/datasets/FTRACT_brain_mask/"
-full_head_directory = ROOT_DIR+"datasets/FTRACT_compressed_nifti/"
-out_extracted_brain_directory = ROOT_DIR+"/datasets/FTRACT_extracted_brain/"
+masks_directory = ROOT_DIR+"/datasets/dallas_flair_extracted_brain_masks/"
+full_head_directory = ROOT_DIR+"datasets/dallas_flair/"
+out_extracted_brain_directory = ROOT_DIR+"/datasets/dallas_flair_extracted_brain/"
 
 empty_header = nib.Nifti1Header()
 
 for file in os.listdir(masks_directory):
-    if file.endswith(".nii.gz") and not file.startswith("00115-Guys-0738"):
+    if file.endswith(".nii.gz"):
 
         mask_img = nib.load(masks_directory+file)
         full_head_img = nib.load(full_head_directory+file)

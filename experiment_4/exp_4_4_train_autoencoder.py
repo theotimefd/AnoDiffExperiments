@@ -46,7 +46,7 @@ set_determinism(0)
 EXPERIMENT_NAME = "exp_4_4_autoencoder"
 #ROOT_DIR = "/home/fehrdelt/bettik/"
 ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
-MODELS_DIR = ROOT_DIR+"best_models/experiment_4/"
+MODELS_DIR = ROOT_DIR+"AnoDiffExperiments/best_models/experiment_4/"
 RESUME_TRAINING = False
 
 train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/Final_ADC_dataset/train.csv")

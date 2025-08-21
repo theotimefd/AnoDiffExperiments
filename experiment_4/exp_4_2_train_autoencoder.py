@@ -26,7 +26,6 @@ from torch.nn import L1Loss, MSELoss
 from torch.utils.tensorboard import SummaryWriter
 from monai.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from monai.data.utils import pad_list_data_collate
-from monai.inferers import SlidingWindowInferer
 
 from visualize_image import visualize_one_slice_in_3d_image
 import csv
@@ -43,12 +42,15 @@ torch.autograd.set_detect_anomaly(True)
 
 set_determinism(0)
 
+EXPERIMENT_NAME = "exp_4_2_autoencoder"
 #ROOT_DIR = "/home/fehrdelt/bettik/"
 ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
-MODELS_DIR = ROOT_DIR+"best_models/experiment_4/"
-RESUME_TRAINING = False
+MODELS_DIR = ROOT_DIR+"AnoDiffExperiments/best_models/experiment_4/"
 
-train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/Final_ADC_dataset/train.csv")
+RESUME_TRAINING = False
+IMAGE_SIZE = 128
+
+train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small/train.csv")
 train_images_path = []
 
 with open(train_csv, mode='r') as file:
@@ -57,7 +59,7 @@ with open(train_csv, mode='r') as file:
         #print(line)
         train_images_path.append(ROOT_DIR+line[0])
 
-val_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/Final_ADC_dataset/val.csv")
+val_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small/val.csv")
 val_images_path = []
 
 with open(val_csv, mode='r') as file:
@@ -66,7 +68,7 @@ with open(val_csv, mode='r') as file:
 
         val_images_path.append(ROOT_DIR+line[0])
 
-test_reconstruction_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/Final_ADC_dataset/test.csv")
+test_reconstruction_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small/test.csv")
 test_reconstruction_images_path = []
 
 with open(test_reconstruction_csv, mode='r') as file:
@@ -85,8 +87,8 @@ val_datalist = val_images_path
 test_reconstruction_datalist = test_reconstruction_images_path
 
 
-batch_size = 32 # batch_size = 48 -> 91 Gb vram
-num_workers = 4
+batch_size = 1 # batch_size = 48 -> 91 Gb vram
+num_workers = 2
 
 class SetBackgroundToZero(transforms.Transform):
     """
@@ -125,9 +127,6 @@ class SetBackgroundToZero(transforms.Transform):
 
         return data
 
-IMAGE_SIZE = 225
-PATCH_SIZE = 64
-
 
 train_transforms = transforms.Compose(
     [
@@ -138,8 +137,8 @@ train_transforms = transforms.Compose(
         transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE, IMAGE_SIZE), lazy=True),
         transforms.ScaleIntensityRange(a_min=0.0, a_max=4000.0, b_min=0.0, b_max=1.0, clip=True),
         transforms.RandScaleIntensity(factors=0.15),
+        transforms.RandFlip(prob=0.5, spatial_axis=0),
         SetBackgroundToZero(),
-        transforms.RandSpatialCrop(roi_size=(PATCH_SIZE, PATCH_SIZE, PATCH_SIZE)), # <-----
     ]
 )
 
@@ -169,16 +168,16 @@ val_transforms = transforms.Compose( # validation needs to be done on the whole 
         #transforms.RandSpatialCrop(roi_size=(PATCH_SIZE, PATCH_SIZE, PATCH_SIZE)), # <-----
     ]
 )
-val_ds = CacheDataset(data=val_datalist[:100], transform=val_transforms) # using only 100 otherwise its way too long because full image 3D with sliding window has to be done on cpu
-"""
+#val_ds = CacheDataset(data=val_datalist, transform=val_transforms) # using only 100 otherwise its way too long because full image 3D with sliding window has to be done on cpu
+
 val_ds = SmartCacheDataset(
     data=val_datalist,
     transform=val_transforms,
     cache_num=100, # number of images to load in RAM
     replace_rate=0.2, # how much of the cache is replaced every epoch
-)"""
+)
 val_loader = DataLoader(
-    val_ds, batch_size=8, shuffle=False, num_workers=num_workers, persistent_workers=True
+    val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True
 )
 
 test_reconstruction_transforms = transforms.Compose(
@@ -221,10 +220,10 @@ discriminator = PatchDiscriminator(
     norm=discriminator_norm,
 ).to(device)
 
-trained_g_path = os.path.join(MODELS_DIR, "autoencoder_best.pt")
-trained_d_path = os.path.join(MODELS_DIR, "discriminator_best.pt")
-trained_g_path_last = os.path.join(MODELS_DIR, "autoencoder_last.pt")
-trained_d_path_last = os.path.join(MODELS_DIR, "discriminator_last.pt")
+trained_g_path = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_autoencoder_best.pt")
+trained_d_path = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_discriminator_best.pt")
+trained_g_path_last = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_autoencoder_last.pt")
+trained_d_path_last = os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_discriminator_last.pt")
 
 Path(MODELS_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -268,7 +267,9 @@ optimizer_g = torch.optim.Adam(params=autoencoder.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=1e-4)
 
 
-tensorboard_writer = SummaryWriter(ROOT_DIR+"AnoDiffExperiments/Tensorboard/exp_4_2_autoencoder")
+tensorboard_writer = SummaryWriter(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{EXPERIMENT_NAME}")
+
+scaler = torch.cuda.amp.GradScaler()
 
 # Step 4: training
 autoencoder_warm_up_n_epochs = 5
@@ -279,25 +280,6 @@ n_example_images = 4
 best_val_recon_epoch_loss = 100.0
 total_step = 0
 
-inferer = SlidingWindowInferer(
-    roi_size=(PATCH_SIZE, PATCH_SIZE, PATCH_SIZE),
-    sw_batch_size=1,
-    sw_device=torch.device("cpu"),#"cpu"
-    device=torch.device("cpu"),
-    overlap=0.25,
-    mode="gaussian",
-    padding_mode="replicate",
-)
-
-def perform_validation(images): #TODO
-    with torch.no_grad():
-        with torch.cuda.amp.autocast():
-            reconstruction = inferer(images.to(torch.device("cpu")), autoencoder.to(torch.device("cpu")))[0]
-        recons_loss = intensity_loss(
-            reconstruction.to(torch.device("cuda")).float(), images.to(torch.device("cuda")).float()
-        ) + perceptual_weight * loss_perceptual(reconstruction.to(torch.device("cuda")).float(), images.to(torch.device("cuda")).float())
-
-    return recons_loss.to(torch.device("cuda"))
 
 for epoch in range(max_epochs):
     # train
@@ -312,10 +294,10 @@ for epoch in range(max_epochs):
         with torch.cuda.amp.autocast(): #TODO AMP
             reconstruction, z_mu, z_sigma = autoencoder(images)
 
-        recons_loss = intensity_loss(reconstruction, images)
-        kl_loss = KL_loss(z_mu, z_sigma)
-        p_loss = loss_perceptual(reconstruction.float(), images.float())
-        loss_g = recons_loss + kl_weight * kl_loss + perceptual_weight * p_loss
+            recons_loss = intensity_loss(reconstruction, images)
+            kl_loss = KL_loss(z_mu, z_sigma)
+            p_loss = loss_perceptual(reconstruction.float(), images.float())
+            loss_g = recons_loss + kl_weight * kl_loss + perceptual_weight * p_loss
 
         if epoch > autoencoder_warm_up_n_epochs:
             logits_fake = discriminator(reconstruction.contiguous().float())[-1]
@@ -355,11 +337,16 @@ for epoch in range(max_epochs):
         autoencoder.eval()
         val_recon_epoch_loss = 0
         for step, batch in enumerate(val_loader):
-            print(f"Validation step {step} of epoch {epoch}")
-            images = batch.to(device)  
-            recons_loss = perform_validation(images) # validation must be done on the whole image with slidingwindow
+            with torch.cuda.amp.autocast():
+                print(f"Validation step {step} of epoch {epoch}")
+                images = batch.to(device)  
+                with torch.no_grad():
+                    reconstruction, z_mu, z_sigma = autoencoder(images)
+                    recons_loss = intensity_loss(
+                        reconstruction.float(), images.float()
+                    ) + perceptual_weight * loss_perceptual(reconstruction.float(), images.float())
 
-            val_recon_epoch_loss += recons_loss.item()
+                val_recon_epoch_loss += recons_loss.item()
 
         val_recon_epoch_loss = val_recon_epoch_loss / (step + 1)
 
