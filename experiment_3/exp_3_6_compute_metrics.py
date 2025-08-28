@@ -362,9 +362,9 @@ def compute(image_loader, mask_loader):
 
         for infer_timesteps in num_timesteps_to_try:
             with autocast(device_type=DEVICE_TYPE, enabled=True):
-                # Perform 5 inferences and average the results
+                # Perform 3 inferences and average the results
                 infered_images = []
-                for _ in range(5):
+                for _ in range(3):
                     infered_images.append(my_sample(test_images, timesteps=infer_timesteps, progress_bar=False))
                 average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
         
