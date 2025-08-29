@@ -35,11 +35,11 @@ set_determinism(0)
 
 IMAGE_SIZE = 128
 
-EXPERIMENT_NAME = "exp_3_6"
+EXPERIMENT_NAME = "exp_3_8"
 MODELS_DIR = ROOT_DIR+"AnoDiffExperiments/best_models/experiment_3/"
 
 
-train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small_with_augmentation_by_registration/train.csv")
+train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_flair_dataset_small/train.csv")
 train_images_path = []
 
 with open(train_csv, mode='r') as file:
@@ -48,36 +48,12 @@ with open(train_csv, mode='r') as file:
         #print(line)
         train_images_path.append(ROOT_DIR+line[0])
 
-val_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small_with_augmentation_by_registration/val.csv")
-val_images_path = []
 
-with open(val_csv, mode='r') as file:
-    reader = csv.reader(file)
-    for line in tqdm(reader):
+train_datalist = train_images_path[:10]
 
-        val_images_path.append(ROOT_DIR+line[0])
 
-test_reconstruction_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_adc_dataset_small_with_augmentation_by_registration/test.csv")
-test_reconstruction_images_path = []
 
-with open(test_reconstruction_csv, mode='r') as file:
-    reader = csv.reader(file)
-    for line in tqdm(reader):
-
-        test_reconstruction_images_path.append(ROOT_DIR+line[0])
-
-#train_datalist = sorted(train_images_path)
-train_datalist = train_images_path
-
-#val_datalist = sorted(val_images_path)
-val_datalist = val_images_path
-
-#val_datalist = sorted(val_images_path)
-test_reconstruction_datalist = test_reconstruction_images_path
-
-#test_unhealthy_datalist = test_unhealthy_images_path
-
-batch_size = 32
+batch_size = 1
 num_workers = 4
 
 
@@ -182,58 +158,25 @@ class SetBackgroundToZero(transforms.Transform):
 
         return data
 
+
+
+
+
 train_transforms = transforms.Compose(
     [
-        transforms.LoadImage(image_only=True),
+        transforms.LoadImage(),
         transforms.EnsureChannelFirst(),
-        transforms.RandAffine(prob=0.2, rotate_range=(0.10, 0.10, 0.10)),#+- 0.15 radians for each axis
-        Get2DSliceWithRandomOffset(axis=2, fixed_offset=0),
+        Get2DSlice(axis=2),
         transforms.ScaleIntensityRange(a_min=0.0, a_max=4000.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.RandScaleCrop(roi_scale=0.9, max_roi_scale=1.1, random_size=True),
         transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.RandScaleIntensity(factors=0.15),
-        transforms.RandFlip(prob=0.5, spatial_axis=0),
         SetBackgroundToZero()
     ]
 )
-train_ds = CacheDataset(data=train_datalist, transform=train_transforms) #TODO datalist[:32]
+train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(
     #collate_fn=pad_list_data_collate: any tensors are centrally padded to match the shape of the biggest tensor in each dimension
     train_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True, collate_fn=pad_list_data_collate
 )
-
-
-val_transforms = transforms.Compose(
-    [
-        transforms.LoadImage(),
-        transforms.EnsureChannelFirst(),
-        Get2DSlice(axis=2),
-        transforms.ScaleIntensityRange(a_min=0.0, a_max=4000.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        SetBackgroundToZero()
-    ]
-)
-val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(
-    val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True
-)
-
-
-test_reconstruction_transforms = transforms.Compose(
-    [
-        transforms.LoadImage(),
-        transforms.EnsureChannelFirst(),
-        Get2DSlice(axis=2),
-        transforms.ScaleIntensityRange(a_min=0.0, a_max=4000.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        SetBackgroundToZero()
-    ]
-)
-test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
-test_reconstruction_loader = DataLoader(
-    test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True
-)
-
 
 
 # ### Opensimplex noise 
@@ -475,7 +418,7 @@ def train_epoch(epoch, best_val_epoch_loss, best_val_epoch):
     if (epoch + 1) % val_interval == 0:
         model.eval()
         val_epoch_loss = 0
-        for step, batch in enumerate(val_loader):
+        for step, batch in enumerate(train_loader):
             images = batch.to(device)
             with torch.no_grad(), autocast(device_type=DEVICE_TYPE, enabled=True):
                 noise = generate_simplex_noise(simplexObj, shape=images.shape).to(device)
@@ -505,23 +448,10 @@ def train_epoch(epoch, best_val_epoch_loss, best_val_epoch):
                 f" at epoch: {best_val_epoch}"
             )
             writer.add_scalar("best_val_loss", best_val_epoch_loss/(step + 1), best_val_epoch)
-
-            # can't visualize an inference image since we don't train from pure noise here
-            #noise = generate_simplex_noise(simplexObj, shape=(1,1,IMAGE_SIZE, IMAGE_SIZE)).to(device)
-            #noise = noise.to(device)
-            #scheduler.set_timesteps(num_inference_steps=1000)
-            #with autocast(device_type=DEVICE_TYPE, enabled=True):
-            #    image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
-            #writer.add_image("sampled_image", image[0, 0].cpu().numpy(), global_step=epoch, dataformats="HW")
-            #plt.figure(figsize=(2, 2))
-            #plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-            #plt.tight_layout()
-            #plt.axis("off")
-            #plt.show()
     
     return best_val_epoch_loss, best_val_epoch
 
-RESUME_TRAINING = True
+RESUME_TRAINING = False
 
 if RESUME_TRAINING == False:
     print("STARTING NEW TRAINING")
