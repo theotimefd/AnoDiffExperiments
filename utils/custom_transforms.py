@@ -51,11 +51,12 @@ class Get2DSliceWithRandomOffset(transforms.RandomizableTransform):
         self.axis = axis
         self.fixed_offset = fixed_offset
         self.rand_offset = 0
+        self.range_offset = range_offset
 
 
     def randomize(self):
         super().randomize(None)
-        self.rand_offset = random.randint(-range_offset, range_offset)
+        self.rand_offset = random.randint(-self.range_offset, self.range_offset)
 
     def __call__(self, data):
         #print(data.shape)

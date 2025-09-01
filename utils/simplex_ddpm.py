@@ -1,9 +1,16 @@
+import sys
+sys.path.append("..")  # to be able to import from parent directory
+import AnoDDPM.simplex as simplex
 import torch
 import numpy as np
 
-from monai.utils import StrEnum
 from typing import Union
 
+from monai.utils import StrEnum
+from monai.networks.schedulers import DDPMScheduler
+
+
+#@torch.compile
 def generate_simplex_noise(simplexObj, shape):
     """Generate spatially correlated simplex noise."""
 
