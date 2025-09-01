@@ -107,3 +107,34 @@ class SetBackgroundToZero(transforms.Transform):
         data = torch.from_numpy(data_np) if is_tensor else data_np
 
         return data
+
+class ScaleIntensityFromHistogramPeak(transforms.Transform):
+    """
+    Custom MONAI transform that scales the intensity values so that the most frequent intensity value (peak of histogram) maps to a target value.
+    
+    Args:
+        keys (str or list): Keys of the dictionary to apply the transform to.
+        target_value (float): target value for the peak of the histogram.
+    """
+    def __init__(self, target_value: int = 0):
+        super().__init__()
+        self.target_value = target_value
+
+    def __call__(self, data):
+        
+            
+        is_tensor = isinstance(data, torch.Tensor)
+        data_np = data.cpu().numpy() if is_tensor else data
+
+        # Compute the histogram of the image slice
+        hist, bins = np.histogram(data_np.flatten(), bins=100, range=(np.max(data_np)/4.0, np.max(data_np)))
+
+        # Find the value corresponding to the maximum of the histogram
+        most_occurred_pixel_value = bins[np.argmax(hist)]
+
+        data_np = data_np/most_occurred_pixel_value*self.target_value # scale it so the peak is always at target_value
+
+        # Put back in original type
+        data = torch.from_numpy(data_np) if is_tensor else data_np
+
+        return data

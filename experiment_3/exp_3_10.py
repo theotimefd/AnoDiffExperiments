@@ -123,14 +123,13 @@ def main():
     [
         transforms.LoadImage(image_only=True),
         transforms.EnsureChannelFirst(),
-        transforms.RandAffine(prob=0.2, rotate_range=(0.10, 0.10, 0.10)),#+- 0.15 radians for each axis
-        transforms.NormalizeIntensity(),
-        transforms.ScaleIntensity(),
+        transforms.RandAffine(prob=0.5, rotate_range=(0.10, 0.10, 0.10)),#+- 0.15 radians for each axis
         #transforms.EnsureType(device=device, track_meta=False),(didn't work error) # convert the data to Tensor without meta, move to GPU and cache to avoid CPU -> GPU sync in every epoch
         custom_transforms.Get2DSliceWithRandomOffset(axis=2, fixed_offset=0, range_offset=10),
         transforms.RandScaleCrop(roi_scale=0.9, max_roi_scale=1.1, random_size=True),
         transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        transforms.RandScaleIntensity(factors=0.15),
+        custom_transforms.ScaleIntensityFromHistogramPeak(target_value=200.0),
+        transforms.ScaleIntensityRange(a_min=0.0, a_max=450.0, b_min=0.0, b_max=1.0, clip=True),
         transforms.RandFlip(prob=0.5, spatial_axis=0),
         custom_transforms.SetBackgroundToZero()
     ]
@@ -141,10 +140,10 @@ def main():
         [
             transforms.LoadImage(),
             transforms.EnsureChannelFirst(),
-            transforms.NormalizeIntensity(),
-            transforms.ScaleIntensity(),
             custom_transforms.Get2DSlice(axis=2),
             transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
+            custom_transforms.ScaleIntensityFromHistogramPeak(target_value=200.0),
+            transforms.ScaleIntensityRange(a_min=0.0, a_max=450.0, b_min=0.0, b_max=1.0, clip=True),
             custom_transforms.SetBackgroundToZero(),
             #transforms.EnsureType(device=device, track_meta=False)
         ]
@@ -164,15 +163,7 @@ def main():
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, sampler=val_sampler
-    ) 
-    """
-    train_loader = ThreadDataLoader(
-        train_ds, batch_size=batch_size, shuffle=(not ddp_bool), num_workers=0, pin_memory=True, sampler=train_sampler
     )
-    val_loader = ThreadDataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True, sampler=val_sampler
-    )
-    """
 
 
     simplexObj = simplex.Simplex_CLASS()
@@ -207,7 +198,7 @@ def main():
         writer = SummaryWriter(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{EXPERIMENT_NAME}")
 
     max_epochs = 20000
-    val_interval = 4
+    val_interval = 10
 
     best_val_epoch_loss = np.inf
     best_val_epoch = 0
