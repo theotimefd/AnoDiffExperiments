@@ -28,15 +28,6 @@ import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 
 
-
-#ROOT_DIR = "/home/fehrdelt/bettik/"
-ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
-EXPERIMENT_NAME = "exp_3_10"
-MODELS_DIR = ROOT_DIR+"AnoDiffExperiments/best_models/experiment_3/"
-
-IMAGE_SIZE = 128
-
-
 def setup_ddp(rank, world_size):
     print(f"Running DDP diffusion example on rank {rank}/world_size {world_size}.")
     print(f"Initing to IP {os.environ['MASTER_ADDR']}")
@@ -47,11 +38,9 @@ def setup_ddp(rank, world_size):
     device = torch.device(f"cuda:{rank}")
     return dist, device
 
-
-def compute_loss(images, simplexObj, model, inferer, num_train_timesteps, device):
+def compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device):
     with autocast("cuda", enabled=True):
         # Generate random noise
-        #noise = torch.randn_like(images).to(device)
         noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape).to(device)
 
         # Create timesteps
@@ -63,11 +52,27 @@ def compute_loss(images, simplexObj, model, inferer, num_train_timesteps, device
         loss = F.mse_loss(noise_pred.float(), noise.float())
         return loss
 
-def main():
-    
-    parser = argparse.ArgumentParser(description=f"{EXPERIMENT_NAME} training script")
-    parser.add_argument("-g", "--gpus", default=1, type=int, help="number of gpus per node")
-    args = parser.parse_args()
+def compute_loss_gaussian(images, model, inferer, num_train_timesteps, device):
+    with autocast("cuda", enabled=True):
+        # Generate random noise
+        noise = torch.randn_like(images).to(device)
+
+        # Create timesteps
+        timesteps = torch.randint(0, num_train_timesteps, (images.shape[0],), device=images.device).long()
+
+        # Get model prediction
+        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+
+        loss = F.mse_loss(noise_pred.float(), noise.float())
+        return loss
+
+
+def launch_train(args):
+
+    ROOT_DIR = args.root_dir
+    EXPERIMENT_NAME = args.experiment_name
+    SUB_EXPERIMENT_NAME = args.sub_experiment_name
+    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/saved_models/{EXPERIMENT_NAME}/"
 
     ddp_bool = args.gpus > 1  # whether to use distributed data parallel
 
@@ -88,7 +93,7 @@ def main():
     torch.autograd.set_detect_anomaly(False)
 
 
-    train_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_flair_dataset_small/train.csv")
+    train_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/train.csv")
     train_images_path = []
 
     with open(train_csv, mode='r') as file:
@@ -97,7 +102,7 @@ def main():
             #print(line)
             train_images_path.append(ROOT_DIR+line[0])
 
-    val_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_flair_dataset_small/val.csv")
+    val_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/val.csv")
     val_images_path = []
 
     with open(val_csv, mode='r') as file:
@@ -105,8 +110,6 @@ def main():
         for line in tqdm(reader):
 
             val_images_path.append(ROOT_DIR+line[0])
-
-
 
     #train_datalist = sorted(train_images_path)
     train_datalist = train_images_path
@@ -116,39 +119,29 @@ def main():
 
     #test_unhealthy_datalist = test_unhealthy_images_path
 
-    batch_size = 70 # 32
-    num_workers = 16 # 4*num_gpus, 4*world_size
+    batch_size = args.dataset["batch_size"]
+    num_workers = args.dataset["num_workers"]
 
-    train_transforms = transforms.Compose(
-    [
-        transforms.LoadImage(image_only=True),
-        transforms.EnsureChannelFirst(),
-        transforms.RandAffine(prob=0.5, rotate_range=(0.10, 0.10, 0.10)),#+- 0.15 radians for each axis
-        #transforms.EnsureType(device=device, track_meta=False),(didn't work error) # convert the data to Tensor without meta, move to GPU and cache to avoid CPU -> GPU sync in every epoch
-        custom_transforms.Get2DSliceWithRandomOffset(axis=2, fixed_offset=0, range_offset=10),
-        transforms.RandScaleCrop(roi_scale=0.9, max_roi_scale=1.1, random_size=True),
-        transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        custom_transforms.ScaleIntensityFromHistogramPeak(target_value=200.0),
-        transforms.ScaleIntensityRange(a_min=0.0, a_max=450.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.RandFlip(prob=0.5, spatial_axis=0),
-        custom_transforms.SetBackgroundToZero()
-    ]
-    )
-    train_ds = CacheDataset(data=train_datalist, transform=train_transforms) #TODO datalist[:32]
 
-    val_transforms = transforms.Compose(
-        [
-            transforms.LoadImage(image_only=True),
-            transforms.EnsureChannelFirst(),
-            custom_transforms.Get2DSlice(axis=2),
-            transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-            custom_transforms.ScaleIntensityFromHistogramPeak(target_value=200.0),
-            transforms.ScaleIntensityRange(a_min=0.0, a_max=450.0, b_min=0.0, b_max=1.0, clip=True),
-            custom_transforms.SetBackgroundToZero(),
-            #transforms.EnsureType(device=device, track_meta=False)
-        ]
-    )
+    # transforms
+    train_tansforms_list = []
+
+    for transform in args.dataset["train_transforms"]:
+        train_transforms_list.append(define_instance(args, "transform"))
+
+    train_transforms = Compose(train_transforms_list)
+    train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
+
+
+
+    val_tansforms_list = []
+
+    for transform in args.dataset["val_transforms"]:
+        val_transforms_list.append(define_instance(args, "transform"))
+
+    val_transforms = Compose(val_transforms_list)
     val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
+    
 
     if ddp_bool:
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds, num_replicas=world_size, rank=rank)
@@ -165,24 +158,22 @@ def main():
         val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, sampler=val_sampler
     )
 
+    model = define_instance(args, "network_def").to(device)
 
-    simplexObj = simplex.Simplex_CLASS()
+    if args.noise["type"] == "simplex":
+        simplexObj = simplex.Simplex_CLASS()
+        num_train_timesteps = args.noise["num_train_timesteps"]
 
+        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_train_timesteps)
+    elif args.noise["type"] == "gaussian":
+        num_train_timesteps = args.noise["num_train_timesteps"]
 
-    model = DiffusionModelUNet(
-        spatial_dims=2,
-        in_channels=1,
-        out_channels=1,
-        channels=(128, 128, 256, 256),
-        attention_levels=(False, True, True, True),
-        num_head_channels=(0, 128, 128, 256),
-    )
-    model.to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=num_train_timesteps,
+            beta_start=args.noise["beta_start"],
+            beta_end=args.noise["beta_end"],)
 
-    num_train_timesteps = 600
-    scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_train_timesteps)
-
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5 * world_size)
+    if args.diffusion_train["optimizer"]["type"] == "Adam":
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=args.diffusion_train["optimizer"]["lr"] * world_size)
 
     inferer = DiffusionInferer(scheduler)
 
@@ -194,11 +185,11 @@ def main():
         print("STARTING NEW TRAINING")
     
     if rank==0:
-        os.makedirs(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{EXPERIMENT_NAME}", exist_ok=True)
-        writer = SummaryWriter(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{EXPERIMENT_NAME}")
+        os.makedirs(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{SUB_EXPERIMENT_NAME}", exist_ok=True)
+        writer = SummaryWriter(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{SUB_EXPERIMENT_NAME}")
 
-    max_epochs = 20000
-    val_interval = 10
+    max_epochs = args.diffusion_train["max_epochs"]
+    val_interval = args.diffusion_train["val_interval"]
 
     best_val_epoch_loss = np.inf
     best_val_epoch = 0
@@ -223,7 +214,10 @@ def main():
             images = batch.to(device)
             optimizer.zero_grad(set_to_none=True)
 
-            loss = compute_loss(images, simplexObj, model, inferer, num_train_timesteps, device)
+            if args.noise["type"] == "simplex":
+                loss = compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device)
+            elif args.noise["type"] == "gaussian":
+                loss = compute_loss_gaussian(images, model, inferer, num_train_timesteps, device)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -242,19 +236,16 @@ def main():
             val_epoch_loss = 0
             for step, batch in enumerate(val_loader):
                 images = batch.to(device)
-                with torch.no_grad(), autocast("cuda", enabled=True):
-                    noise = simplex_ddpm.generate_simplex_noise(simplexObj, shape=images.shape).to(device)
-
-                    timesteps = torch.randint(0, num_train_timesteps, (images.shape[0],), device=images.device).long()
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
-
+                
+                if args.noise["type"] == "simplex":
+                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device)
+                elif args.noise["type"] == "gaussian":
+                    val_loss = compute_loss_gaussian(images, model, inferer, num_train_timesteps, device)
+                
                 val_epoch_loss += val_loss.item() 
 
                 #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-
             
-
             if rank==0:
                 
                 writer.add_scalar("val_loss", val_epoch_loss / (step + 1), epoch)
@@ -264,9 +255,9 @@ def main():
                     best_val_epoch = epoch + 1
 
                     if ddp_bool:
-                        torch.save(model.module.state_dict(), os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_best_model.pth"))
+                        torch.save(model.module.state_dict(), os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_best_model.pth"))
                     else:
-                        torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{EXPERIMENT_NAME}_best_model.pth"))
+                        torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_best_model.pth"))
 
                     print("saved new best metric model")
                     print(
@@ -288,6 +279,8 @@ def main():
                     #plt.tight_layout()
                     #plt.axis("off")
                     #plt.show()
+        
+        print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
     
 
 if __name__ == "__main__":
