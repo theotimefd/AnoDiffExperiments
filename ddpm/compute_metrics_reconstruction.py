@@ -2,6 +2,10 @@ import os
 import time
 import glob
 import sys
+import argparse
+import json
+from pathlib import Path
+sys.path.append("../..")
 sys.path.append("..")
 #import opensimplex
 
@@ -35,6 +39,7 @@ import pandas as pd
 import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
+from utils.utils import define_instance
 
 from monai.metrics import compute_iou
 
@@ -51,11 +56,11 @@ def launch_compute_metrics_reconstruction(args):
 
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
-    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/best_models/{EXPERIMENT_NAME}/"
+    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
 
     IMAGE_SIZE = args.image_size
 
-    model_path = f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
+    model_path = f"{args.root_dir}/AnoDiffExperiments/{args['experiment_name']}/{args['sub_experiment_name']}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
@@ -76,26 +81,17 @@ def launch_compute_metrics_reconstruction(args):
 
     # ----------- MODEL SETTINGS -----------
 
-        train_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/train.csv")
-    train_images_path = []
+    test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/test.csv")
+    test_reconstruction_images_path = []
 
-    with open(train_csv, mode='r') as file:
+    with open(test_reconstruction_csv, mode='r') as file:
         reader = csv.reader(file)
         for line in tqdm(reader):
             #print(line)
-            train_images_path.append(ROOT_DIR+line[0])
+            test_reconstruction_images_path.append(ROOT_DIR+line[0])
 
-    val_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/val.csv")
-    val_images_path = []
-
-    with open(val_csv, mode='r') as file:
-        reader = csv.reader(file)
-        for line in tqdm(reader):
-
-            val_images_path.append(ROOT_DIR+line[0])
-
-    #train_datalist = sorted(train_images_path)
-    train_datalist = train_images_path
+    #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
+    test_reconstruction_datalist = test_reconstruction_images_path
 
     #val_datalist = sorted(val_images_path)
     val_datalist = val_images_path
@@ -107,23 +103,16 @@ def launch_compute_metrics_reconstruction(args):
 
 
     # transforms
-    train_tansforms_list = []
-
-    for transform in args.dataset["train_transforms"]:
-        train_transforms_list.append(define_instance(args, "transform"))
-
-    train_transforms = Compose(train_transforms_list)
-    train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
+    test_reconstruction_transforms = define_instance(args, "test_reconstruction_transforms")
+    test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
 
     if ddp_bool:
-        train_sampler = torch.utils.data.distributed.DistributedSampler(train_ds, num_replicas=world_size, rank=rank)
-        val_sampler = torch.utils.data.distributed.DistributedSampler(val_ds, num_replicas=world_size, rank=rank)
+        test_reconstruction_sampler = torch.utils.data.distributed.DistributedSampler(test_reconstruction_ds, num_replicas=world_size, rank=rank)
     else:
-        train_sampler = None
-        val_sampler = None
+        test_reconstruction_sampler = None
     
-    train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=(not ddp_bool), num_workers=num_workers, pin_memory=True, sampler=train_sampler
+    test_reconstruction_loader = DataLoader(
+        test_reconstruction_ds, batch_size=batch_size, shuffle=(not ddp_bool), num_workers=num_workers, pin_memory=True, sampler=test_reconstruction_sampler
     )
 
     model = define_instance(args, "network_def").to(device)
@@ -150,15 +139,6 @@ def launch_compute_metrics_reconstruction(args):
 
     model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
     model.eval()
-
-    # remove "module." prefix if present (from DDP/DataParallel)
-    ckpt = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in ckpt.items()}
-
-    missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
-    if missing_keys or unexpected_keys:
-        print(f"load_state_dict warnings — missing: {missing_keys}, unexpected: {unexpected_keys}")
-
-
 
     @torch.no_grad()
     def my_sample(image, timesteps=100, progress_bar=True, return_first_noisy_image=False):
@@ -200,42 +180,6 @@ def launch_compute_metrics_reconstruction(args):
             return image, first_noisy_image
         else:
             return image
-
-    # ----------- DATASET -----------
-
-    test_reconstruction_csv = os.path.join(ROOT_DIR, "AnoDiffExperiments/data_splits_lists/final_flair_dataset_small/test.csv")
-    test_reconstruction_images_path = []
-
-    with open(test_reconstruction_csv, mode='r') as file:
-        reader = csv.reader(file)
-        for line in tqdm(reader):
-            #print(line)
-            test_reconstruction_images_path.append(ROOT_DIR+line[0])
-
-
-    test_reconstruction_datalist = test_reconstruction_images_path[:10]
-
-
-    #test_unhealthy_datalist = test_unhealthy_images_path
-
-    batch_size = 16
-    num_workers = 8
-
-    test_reconstruction_transforms = transforms.Compose(
-        [
-            transforms.LoadImage(),
-            transforms.EnsureChannelFirst(),
-            transforms.NormalizeIntensity(),
-            transforms.ScaleIntensity(),
-            Get2DSlice(axis=2),
-            SetBackgroundToZero(),
-            transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
-        ]
-    )
-    test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
-    test_reconstruction_loader = DataLoader(
-        test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, persistent_workers=True
-    )
 
     # ----------- COMPUTING METRICS -----------
 
@@ -414,5 +358,5 @@ def launch_compute_metrics_reconstruction(args):
     fig.delaxes(axes[3,6])
     fig.delaxes(axes[3,7])
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/experiment_3/{EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
 

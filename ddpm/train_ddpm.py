@@ -1,9 +1,12 @@
 import argparse
+import json
+from pathlib import Path
 import os
 import time
 from datetime import timedelta
 import sys
 sys.path.append("..")
+sys.path.append("../..")
 
 import numpy as np
 import csv
@@ -24,6 +27,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
 import utils.custom_transforms as custom_transforms
+from utils.utils import define_instance
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 
@@ -72,7 +76,8 @@ def launch_train(args):
     ROOT_DIR = args.root_dir
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
-    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/saved_models/{EXPERIMENT_NAME}/"
+    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
+    os.makedirs(MODELS_DIR, exist_ok=True)
 
     ddp_bool = args.gpus > 1  # whether to use distributed data parallel
 
@@ -123,23 +128,12 @@ def launch_train(args):
     num_workers = args.dataset["num_workers"]
 
 
-    # transforms
-    train_tansforms_list = []
 
-    for transform in args.dataset["train_transforms"]:
-        train_transforms_list.append(define_instance(args, "transform"))
-
-    train_transforms = Compose(train_transforms_list)
+    train_transforms = define_instance(args, "train_transforms")
     train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 
 
-
-    val_tansforms_list = []
-
-    for transform in args.dataset["val_transforms"]:
-        val_transforms_list.append(define_instance(args, "transform"))
-
-    val_transforms = Compose(val_transforms_list)
+    val_transforms = define_instance(args, "val_transforms")
     val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
     
 

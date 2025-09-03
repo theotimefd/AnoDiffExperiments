@@ -55,3 +55,4 @@ cython_debug/
 *.err
 *.sh
 *scores_iou.csv
+*.pth

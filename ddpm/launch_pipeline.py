@@ -1,9 +1,13 @@
 
 import os
+import argparse
+import json
+from pathlib import Path
 from train_ddpm import launch_train
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 
 def main():
+    parser = argparse.ArgumentParser(description="DDPM training script")
     parser.add_argument(
         "-c",
         "--config-file",
@@ -11,7 +15,7 @@ def main():
         help="config json file that stores hyper-parameters",
     )
 
-    parser = argparse.ArgumentParser(description="DDPM training script")
+    
     parser.add_argument("-g", "--gpus", default=1, type=int, help="number of gpus per node")
     
     args = parser.parse_args()

@@ -31,7 +31,9 @@ from monai.utils import StrEnum
 from typing import Union
 
 import pandas as pd
+import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
+import utils.simplex_ddpm as simplex_ddpm
 
 from monai.metrics import compute_iou
 
@@ -359,13 +361,14 @@ num_workers = 8
 
 test_reconstruction_transforms = transforms.Compose(
     [
-        transforms.LoadImage(),
+        transforms.LoadImage(image_only=True),
         transforms.EnsureChannelFirst(),
-        transforms.NormalizeIntensity(),
-        transforms.ScaleIntensity(),
-        Get2DSlice(axis=2),
-        SetBackgroundToZero(),
+        custom_transforms.Get2DSlice(axis=2),
         transforms.ResizeWithPadOrCrop(spatial_size=(IMAGE_SIZE, IMAGE_SIZE)),
+        custom_transforms.ScaleIntensityFromHistogramPeak(target_value=200.0),
+        transforms.ScaleIntensityRange(a_min=0.0, a_max=450.0, b_min=0.0, b_max=1.0, clip=True),
+        custom_transforms.SetBackgroundToZero(),
+        #transforms.EnsureType(device=device, track_meta=False)
     ]
 )
 test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
