@@ -47,6 +47,7 @@ from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
 def launch_compute_metrics_reconstruction(args):
     DEVICE_TYPE = "cuda:0"
+    device = torch.device(DEVICE_TYPE)
 
     set_determinism(0)
 
@@ -60,7 +61,7 @@ def launch_compute_metrics_reconstruction(args):
 
     IMAGE_SIZE = args.image_size
 
-    model_path = f"{args.root_dir}/AnoDiffExperiments/{args['experiment_name']}/{args['sub_experiment_name']}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
+    model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
@@ -93,9 +94,6 @@ def launch_compute_metrics_reconstruction(args):
     #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
     test_reconstruction_datalist = test_reconstruction_images_path
 
-    #val_datalist = sorted(val_images_path)
-    val_datalist = val_images_path
-
     #test_unhealthy_datalist = test_unhealthy_images_path
 
     batch_size = args.dataset["batch_size"]
@@ -103,39 +101,15 @@ def launch_compute_metrics_reconstruction(args):
 
 
     # transforms
-    test_reconstruction_transforms = define_instance(args, "test_reconstruction_transforms")
+    test_reconstruction_transforms = define_instance(args, "val_transforms")
     test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
 
-    if ddp_bool:
-        test_reconstruction_sampler = torch.utils.data.distributed.DistributedSampler(test_reconstruction_ds, num_replicas=world_size, rank=rank)
-    else:
-        test_reconstruction_sampler = None
-    
+
     test_reconstruction_loader = DataLoader(
-        test_reconstruction_ds, batch_size=batch_size, shuffle=(not ddp_bool), num_workers=num_workers, pin_memory=True, sampler=test_reconstruction_sampler
+        test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
     )
 
     model = define_instance(args, "network_def").to(device)
-
-
-    if args.noise["type"] == "simplex":
-        simplexObj = simplex.Simplex_CLASS()
-        num_train_timesteps = args.noise["num_train_timesteps"]
-
-        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_train_timesteps)
-    elif args.noise["type"] == "gaussian":
-        num_train_timesteps = args.noise["num_train_timesteps"]
-
-        scheduler = DDPMScheduler(num_train_timesteps=num_train_timesteps,
-            beta_start=args.noise["beta_start"],
-            beta_end=args.noise["beta_end"],)
-
-    if args.diffusion_train["optimizer"]["type"] == "Adam":
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=args.diffusion_train["optimizer"]["lr"] * world_size)
-
-
-    inferer = DiffusionInferer(scheduler)
-
 
     model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
     model.eval()
@@ -145,10 +119,15 @@ def launch_compute_metrics_reconstruction(args):
         
         
         num_infer_timesteps = timesteps #100 # higher number = more noise at first timestep, more denoising steps
-        
-        infer_scheduler = SimplexDDPMScheduler(num_train_timesteps=num_infer_timesteps)
+        if args.noise["type"] == "simplex":
+            infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_infer_timesteps)
+        else:
+            infer_scheduler = DDPMScheduler(num_train_timesteps=num_infer_timesteps,
+            beta_start=args.noise["beta_start"],
+            beta_end=args.noise["beta_end"],)
 
-        all_next_timesteps = torch.cat((scheduler.timesteps[1:], torch.tensor([0], dtype=infer_scheduler.timesteps.dtype)))
+
+        all_next_timesteps = torch.cat((infer_scheduler.timesteps[1:], torch.tensor([0], dtype=infer_scheduler.timesteps.dtype)))
 
         first_noisy_image = torch.zeros_like(image)
 
@@ -204,10 +183,9 @@ def launch_compute_metrics_reconstruction(args):
 
                 infered, first_noisy_images = my_sample(test_reconstruction_images, timesteps=noise_timesteps, progress_bar=False, return_first_noisy_image=True)
 
-
                 mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
                 ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
-                psnr[noise_timesteps].append(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
+                psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
 
     infer_timesteps = NOISE_MIN+NOISE_MAX//2
 

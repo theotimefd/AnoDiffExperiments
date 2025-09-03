@@ -96,6 +96,7 @@
             "type": "Adam",
             "lr": 2e-5
         },
+        "lr_scheduler": "none",
         "ema":true
     },
     "compute_metrics_reconstruction":{

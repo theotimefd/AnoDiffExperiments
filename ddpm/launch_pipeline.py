@@ -23,16 +23,32 @@ def main():
 
     for k, v in config_dict.items():
         setattr(args, k, v)
-
-    os.makedirs(f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/", exist_ok=True)
-    os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
-
-    print(f"Launching training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
     
+    ddp_bool = args.gpus > 1  # whether to use distributed data parallel
+
+    if ddp_bool:
+        rank = int(os.environ["LOCAL_RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+    else:
+        rank = 0
+        world_size = 1
+        device = 0
+
+    if rank == 0:
+        
+
+        os.makedirs(f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/", exist_ok=True)
+        os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
+
+        print(f"Launching training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+        
     if args.diffusion_train["enabled"]:
         launch_train(args)
-    if args.compute_metrics_reconstruction["enabled"]:
-        launch_compute_metrics_reconstruction(args)
+
+    if rank == 0:
+        if args.compute_metrics_reconstruction["enabled"]:
+            print("Launching reconstruction metrics computation")
+            launch_compute_metrics_reconstruction(args)
 
 
 if __name__ == "__main__":

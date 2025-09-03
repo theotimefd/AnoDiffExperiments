@@ -168,6 +168,16 @@ def launch_train(args):
 
     if args.diffusion_train["optimizer"]["type"] == "Adam":
         optimizer = torch.optim.Adam(params=model.parameters(), lr=args.diffusion_train["optimizer"]["lr"] * world_size)
+    
+    if args.diffusion_train["lr_scheduler"]!= "none":
+        
+        if args.diffusion_train["lr_scheduler"]["type"] == "MultiStepLR":
+            lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer_diff,
+            milestones=args.diffusion_train["lr_scheduler_milestones"],
+            gamma=0.1)
+
+
 
     inferer = DiffusionInferer(scheduler)
 
@@ -193,7 +203,8 @@ def launch_train(args):
 
     for epoch in range(max_epochs):
         model.train()
-
+        if rank==0 and args.diffusion_train["lr_scheduler"]!= "none":
+            lr_scheduler.step()
         if ddp_bool:
             # if ddp, distribute data across n gpus
             train_loader.sampler.set_epoch(epoch)
