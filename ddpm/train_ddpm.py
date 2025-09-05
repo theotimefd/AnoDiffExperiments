@@ -5,7 +5,6 @@ import os
 import time
 from datetime import timedelta
 import sys
-sys.path.append("..")
 sys.path.append("../..")
 
 import numpy as np
@@ -42,13 +41,13 @@ def setup_ddp(rank, world_size):
     device = torch.device(f"cuda:{rank}")
     return dist, device
 
-def compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device):
+def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, device):
     with autocast("cuda", enabled=True):
         # Generate random noise
         noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape).to(device)
 
         # Create timesteps
-        timesteps = torch.randint(0, num_train_timesteps, (images.shape[0],), device=images.device).long()
+        timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
 
         # Get model prediction
         noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
@@ -56,13 +55,13 @@ def compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps
         loss = F.mse_loss(noise_pred.float(), noise.float())
         return loss
 
-def compute_loss_gaussian(images, model, inferer, num_train_timesteps, device):
+def compute_loss_gaussian(images, model, inferer, num_timesteps, device):
     with autocast("cuda", enabled=True):
         # Generate random noise
         noise = torch.randn_like(images).to(device)
 
         # Create timesteps
-        timesteps = torch.randint(0, num_train_timesteps, (images.shape[0],), device=images.device).long()
+        timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
 
         # Get model prediction
         noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
@@ -156,15 +155,10 @@ def launch_train(args):
 
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()
-        num_train_timesteps = args.noise["num_train_timesteps"]
+        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
-        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_train_timesteps)
     elif args.noise["type"] == "gaussian":
-        num_train_timesteps = args.noise["num_train_timesteps"]
-
-        scheduler = DDPMScheduler(num_train_timesteps=num_train_timesteps,
-            beta_start=args.noise["beta_start"],
-            beta_end=args.noise["beta_end"],)
+        scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
     if args.diffusion_train["optimizer"]["type"] == "Adam":
         optimizer = torch.optim.Adam(params=model.parameters(), lr=args.diffusion_train["optimizer"]["lr"] * world_size)
@@ -220,9 +214,9 @@ def launch_train(args):
             optimizer.zero_grad(set_to_none=True)
 
             if args.noise["type"] == "simplex":
-                loss = compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device)
+                loss = compute_loss_simplex(images, simplexObj, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
             elif args.noise["type"] == "gaussian":
-                loss = compute_loss_gaussian(images, model, inferer, num_train_timesteps, device)
+                loss = compute_loss_gaussian(images, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -243,9 +237,9 @@ def launch_train(args):
                 images = batch.to(device)
                 
                 if args.noise["type"] == "simplex":
-                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, num_train_timesteps, device)
+                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
                 elif args.noise["type"] == "gaussian":
-                    val_loss = compute_loss_gaussian(images, model, inferer, num_train_timesteps, device)
+                    val_loss = compute_loss_gaussian(images, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
                 
                 val_epoch_loss += val_loss.item() 
 

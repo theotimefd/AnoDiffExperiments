@@ -72,12 +72,12 @@
     },
     "noise": {
         "type": "simplex",
+        "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
-        "num_train_timesteps": 600,
-        "beta_start": 0.0015,
-        "beta_end": 0.0195
+        "num_timesteps_full_noise": 1000,
+        "num_timesteps_train_and_infer": 600
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -97,6 +97,7 @@
             "lr": 2e-5
         },
         "lr_scheduler": "none",
+        "lr_scheduler_milestones": [1000],
         "ema":true
     },
     "compute_metrics_reconstruction":{
@@ -125,7 +126,7 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_timesteps_min": 300,
+        "noise_timesteps_min": 200,
         "noise_timesteps_max": 600,
         "noise_interval": 50
     }

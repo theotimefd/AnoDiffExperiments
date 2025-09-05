@@ -6,7 +6,6 @@ import argparse
 import json
 from pathlib import Path
 sys.path.append("../..")
-sys.path.append("..")
 #import opensimplex
 
 #from torchvision.utils import save_image
@@ -114,49 +113,49 @@ def launch_compute_metrics_reconstruction(args):
     model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
     model.eval()
 
+
+    if args.noise["type"] == "simplex":
+        simplexObj = simplex.Simplex_CLASS()
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+
+    elif args.noise["type"] == "gaussian":
+        infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+
+
     @torch.no_grad()
-    def my_sample(image, timesteps=100, progress_bar=True, return_first_noisy_image=False):
+    def my_sample(image, infer_scheduler, timesteps, return_intermediates=False):
         
-        
-        num_infer_timesteps = timesteps #100 # higher number = more noise at first timestep, more denoising steps
-        if args.noise["type"] == "simplex":
-            infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=num_infer_timesteps)
-        else:
-            infer_scheduler = DDPMScheduler(num_train_timesteps=num_infer_timesteps,
-            beta_start=args.noise["beta_start"],
-            beta_end=args.noise["beta_end"],)
+        simplexObj = simplex.Simplex_CLASS()
+
+        noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape).to(device)
+        print(noise.shape)
+
+        if timesteps >= infer_scheduler.num_train_timesteps:
+            print(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)
+
+        timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
+
+        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
 
 
-        all_next_timesteps = torch.cat((infer_scheduler.timesteps[1:], torch.tensor([0], dtype=infer_scheduler.timesteps.dtype)))
+        intermediates = []
+        intermediates_step = 20
 
-        first_noisy_image = torch.zeros_like(image)
-
-        if progress_bar:
-            progress_bar = tqdm(
-                zip(infer_scheduler.timesteps, all_next_timesteps),
-                total=min(len(infer_scheduler.timesteps), len(all_next_timesteps)),
-            )
-        else:
-            progress_bar = zip(infer_scheduler.timesteps, all_next_timesteps)
                 
-                
-        for t, next_t in progress_bar: # va de num_infer_timesteps à 0
-            # 1. predict noise model_output
-            diffusion_model = model
+        for t in range(timesteps, 0, -1): # va de timesteps à 0
             
-            model_output = diffusion_model(
+            model_output = model(
                 image, timesteps=torch.Tensor((t,)).to(device), context=None
             )
-            #inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-            # 2. compute previous image: x_t -> x_t-1
+            #print(model_output.shape)
             
             image, _ = infer_scheduler.step(model_output, t, image)
+        
+            if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
+                intermediates.append(image)
 
-            if t == num_infer_timesteps-1:
-                first_noisy_image = image
-
-        if return_first_noisy_image:
-            return image, first_noisy_image
+        if return_intermediates:
+            return image, intermediates
         else:
             return image
 
@@ -181,7 +180,7 @@ def launch_compute_metrics_reconstruction(args):
 
                 print(f"inference for {noise_timesteps} noise timesteps")
 
-                infered, first_noisy_images = my_sample(test_reconstruction_images, timesteps=noise_timesteps, progress_bar=False, return_first_noisy_image=True)
+                infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
 
                 mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
                 ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
@@ -197,7 +196,8 @@ def launch_compute_metrics_reconstruction(args):
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             infered_images = []
-            infered, first_noisy_images = my_sample(test_reconstruction_images, timesteps=infer_timesteps, progress_bar=False, return_first_noisy_image=True)
+            infered, intermediates = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=True)
+            first_noisy_images = intermediates[0]
 
     # ----------- PLOT -----------
 
