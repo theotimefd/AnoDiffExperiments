@@ -40,15 +40,20 @@ def main():
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/", exist_ok=True)
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
 
-        print(f"Launching training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
         
-    if args.diffusion_train["enabled"]:
-        launch_train(args)
+    
 
-    if rank == 0:
-        if args.compute_metrics_reconstruction["enabled"]:
+
+    for step in args.pipeline:
+        
+        if step == "train_ddpm":
+            print(f"Launching ddpm training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            launch_train(args)
+        
+        if step == "compute_metrics_reconstruction" and rank == 0:
             print("Launching reconstruction metrics computation")
             launch_compute_metrics_reconstruction(args)
+    
 
 
 if __name__ == "__main__":

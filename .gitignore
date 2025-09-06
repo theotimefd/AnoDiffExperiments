@@ -11,6 +11,7 @@ Unsupervised_Anomaly_Detection_Brain_MRI/
 Best_models/
 best_models/
 tensorboard/
+old_tensorboard/
 
 # Jupyter Notebook
 .ipynb_checkpoints

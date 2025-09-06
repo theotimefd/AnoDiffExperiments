@@ -115,8 +115,7 @@ def launch_compute_metrics_reconstruction(args):
 
 
     if args.noise["type"] == "simplex":
-        simplexObj = simplex.Simplex_CLASS()
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
 
     elif args.noise["type"] == "gaussian":
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -174,7 +173,6 @@ def launch_compute_metrics_reconstruction(args):
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             # Perform 5 inferences and average the results
-            infered_images = []
 
             for i, noise_timesteps in enumerate(NOISE_RANGE):
 
@@ -186,7 +184,9 @@ def launch_compute_metrics_reconstruction(args):
                 ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
                 psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
 
-    infer_timesteps = NOISE_MIN+NOISE_MAX//2
+
+    # ----------- VISUALIZATION OF A BATCH -----------
+    infer_timesteps_visualize = args.compute_metrics_reconstruction["noise_timesteps_visualize"]
 
 
     for i,(image_batch) in enumerate(test_reconstruction_loader):
@@ -195,8 +195,8 @@ def launch_compute_metrics_reconstruction(args):
         test_reconstruction_images = image_batch.to(device)
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
-            infered_images = []
-            infered, intermediates = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=True)
+
+            infered, intermediates = my_sample(test_reconstruction_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=True)
             first_noisy_images = intermediates[0]
 
     # ----------- PLOT -----------
@@ -229,8 +229,8 @@ def launch_compute_metrics_reconstruction(args):
         
 
         #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].set_title(f'Noisy {idx+1}, timesteps={infer_timesteps}')
+        axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
+        axes[1, idx*2].set_title(f'Noisy {idx+1}, timesteps={infer_timesteps_visualize}')
         axes[1, idx*2].axis('off')
 
         axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))

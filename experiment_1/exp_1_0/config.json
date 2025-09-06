@@ -1,13 +1,13 @@
 {
-    "experiment_name": "experiment_0",
-    "sub_experiment_name": "exp_0_0",
+    "experiment_name": "experiment_1",
+    "sub_experiment_name": "exp_1_0",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction"],
+    "pipeline": ["train_ddpm","compute_metrics_reconstruction"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_flair_dataset_small",
+        "name": "final_adc_dataset_small",
         "batch_size": 32,
         "num_workers": 16
     },
@@ -33,10 +33,10 @@
             "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
         },
         {
-            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
         },
         {
-            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":450.0, "b_min":0.0, "b_max":1.0, "clip":true
+            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
         },
         {
             "_target_": "monai.transforms.RandFlip", "prob": 0.5, "spatial_axis": 0
@@ -61,10 +61,10 @@
                 "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
             },
             {
-                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
             },
             {
-                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":450.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             {
                 "_target_": "utils.custom_transforms.SetBackgroundToZero"
@@ -116,10 +116,10 @@
                 "_target_": "transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
             },
             "transform_6":{
-                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
             },
             "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":450.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             "transform_9":{
                 "_target_": "custom_transforms.SetBackgroundToZero"

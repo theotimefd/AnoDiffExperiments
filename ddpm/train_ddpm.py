@@ -21,6 +21,7 @@ import random
 
 from monai.inferers import DiffusionInferer
 from monai.networks.nets import DiffusionModelUNet
+from monai.networks.schedulers import DDPMScheduler
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
@@ -155,7 +156,7 @@ def launch_train(args):
 
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()
-        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
 
     elif args.noise["type"] == "gaussian":
         scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -167,7 +168,7 @@ def launch_train(args):
         
         if args.diffusion_train["lr_scheduler"]["type"] == "MultiStepLR":
             lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer_diff,
+            optimizer,
             milestones=args.diffusion_train["lr_scheduler_milestones"],
             gamma=0.1)
 
@@ -179,8 +180,6 @@ def launch_train(args):
         # When using DDP, BatchNorm needs to be converted to SyncBatchNorm.
         #model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = DDP(model, device_ids=[device], output_device=rank, find_unused_parameters=False)
-    
-        print("STARTING NEW TRAINING")
     
     if rank==0:
         os.makedirs(ROOT_DIR+f"AnoDiffExperiments/tensorboard/{SUB_EXPERIMENT_NAME}", exist_ok=True)

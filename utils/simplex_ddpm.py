@@ -11,7 +11,7 @@ from monai.networks.schedulers import DDPMScheduler
 
 
 #@torch.compile
-def generate_simplex_noise(simplexObj, shape):
+def generate_simplex_noise(simplexObj, shape, octaves=6, persistence=0.8, frequency=64):
     """Generate spatially correlated simplex noise."""
 
     simplexObj.newSeed()
@@ -44,11 +44,14 @@ class DDPMPredictionType(StrEnum):
 
 
 class SimplexDDPMScheduler(DDPMScheduler):
-    def __init__(self, *args, noise_scale=1.0, **kwargs):
+    def __init__(self, *args, noise_scale=1.0, octaves=6, persistence=0.8, frequency=64, **kwargs):
         super().__init__(*args, **kwargs)
         self.noise_scale = noise_scale
         self.simplex_obj = simplex.Simplex_CLASS()
         self.simplex_obj.newSeed()
+        self.octaves = octaves
+        self.persistence = persistence
+        self.frequency = frequency
 
     #def step(
     #    self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, generator: torch.Generator | None = None
@@ -108,8 +111,8 @@ class SimplexDDPMScheduler(DDPMScheduler):
         variance: torch.Tensor = torch.tensor(0)
         if timestep > 0:
             self.simplex_obj.newSeed()
-            noise = generate_simplex_noise(self.simplex_obj, shape=model_output.size()).to(model_output.device)
-            
+            noise = generate_simplex_noise(self.simplex_obj, shape=model_output.size(), octaves=self.octaves, persistence=self.persistence, frequency=self.frequency).to(model_output.device)
+
             """ #TODO
             noise = torch.randn(
                 model_output.size(),
