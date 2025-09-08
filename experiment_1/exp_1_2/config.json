@@ -1,8 +1,8 @@
 {
     "experiment_name": "experiment_1",
-    "sub_experiment_name": "exp_1_0",
+    "sub_experiment_name": "exp_1_2",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_anomaly_detection"],
+    "pipeline": ["train_ddpm", "compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -96,8 +96,8 @@
             "type": "Adam",
             "lr": 2e-5
         },
-        "lr_scheduler": "none",
-        "lr_scheduler_milestones": [1000],
+        "lr_scheduler": "MultiStepLR",
+        "lr_scheduler_milestones": [2000, 4000],
         "ema":true
     },
     "compute_metrics_reconstruction":{

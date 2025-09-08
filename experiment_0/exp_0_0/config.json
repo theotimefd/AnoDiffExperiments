@@ -101,7 +101,6 @@
         "ema":true
     },
     "compute_metrics_reconstruction":{
-        "dataset": "final_flair_dataset_small",
         "transforms": {
             "transform_0":{
                 "_target_": "transforms.LoadImage", "image_only": true

@@ -1,8 +1,8 @@
 {
     "experiment_name": "experiment_1",
-    "sub_experiment_name": "exp_1_0",
+    "sub_experiment_name": "exp_1_1",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_anomaly_detection"],
+    "pipeline": ["train_ddpm", "compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -77,8 +77,8 @@
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
-        "num_timesteps_full_noise": 1000,
-        "num_timesteps_train_and_infer": 500
+        "num_timesteps_full_noise": 1500,
+        "num_timesteps_train_and_infer": 600
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -125,8 +125,8 @@
             }
         },
         "noise_timesteps_min": 200,
-        "noise_timesteps_max": 500,
+        "noise_timesteps_max": 600,
         "noise_interval": 50,
-        "noise_timesteps_visualize":300
+        "noise_timesteps_visualize":450
     }
 }

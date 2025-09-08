@@ -127,7 +127,7 @@ def launch_compute_metrics_reconstruction(args):
         simplexObj = simplex.Simplex_CLASS()
 
         noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape).to(device)
-        print(noise.shape)
+        
 
         if timesteps >= infer_scheduler.num_train_timesteps:
             print(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)

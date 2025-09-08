@@ -166,7 +166,7 @@ def launch_train(args):
     
     if args.diffusion_train["lr_scheduler"]!= "none":
         
-        if args.diffusion_train["lr_scheduler"]["type"] == "MultiStepLR":
+        if args.diffusion_train["lr_scheduler"] == "MultiStepLR":
             lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
             optimizer,
             milestones=args.diffusion_train["lr_scheduler_milestones"],

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from train_ddpm import launch_train
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
+from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 
 def main():
     parser = argparse.ArgumentParser(description="DDPM training script")
@@ -53,6 +54,11 @@ def main():
         if step == "compute_metrics_reconstruction" and rank == 0:
             print("Launching reconstruction metrics computation")
             launch_compute_metrics_reconstruction(args)
+        
+        if step=="compute_metrics_anomaly_detection" and rank==0:
+            print("Launching anomaly detection metrics computation")
+            launch_compute_metrics_anomaly_detection(args)
+            
     
 
 
