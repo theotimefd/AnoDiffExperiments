@@ -2,7 +2,7 @@
     "experiment_name": "small_noise_test_reconstruction",
     "sub_experiment_name": "exp_0",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["train_ddpm", "compute_metrics_reconstruction"],
+    "pipeline": ["compute_metrics_reconstruction"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -78,7 +78,7 @@
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
         "num_timesteps_full_noise": 4000,
-        "num_timesteps_train_and_infer": 800
+        "noise_rate_train_and_infer": 0.2
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -124,9 +124,9 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_timesteps_min": 200,
-        "noise_timesteps_max": 800,
-        "noise_interval": 100,
-        "noise_timesteps_visualize":800
+        "noise_rate_min": 0.05,
+        "noise_rate_max": 0.075,
+        "noise_timesteps_interval": 50,
+        "noise_rate_visualize": 0.075
     }
 }

@@ -213,9 +213,9 @@ def launch_train(args):
             optimizer.zero_grad(set_to_none=True)
 
             if args.noise["type"] == "simplex":
-                loss = compute_loss_simplex(images, simplexObj, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
+                loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
             elif args.noise["type"] == "gaussian":
-                loss = compute_loss_gaussian(images, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
+                loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -236,11 +236,11 @@ def launch_train(args):
                 images = batch.to(device)
                 
                 if args.noise["type"] == "simplex":
-                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
+                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
                 elif args.noise["type"] == "gaussian":
-                    val_loss = compute_loss_gaussian(images, model, inferer, args.noise["num_timesteps_train_and_infer"], device)
-                
-                val_epoch_loss += val_loss.item() 
+                    val_loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+
+                val_epoch_loss += val_loss.item()
 
                 #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             

@@ -66,9 +66,9 @@ def launch_compute_metrics_reconstruction(args):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = args.compute_metrics_reconstruction["noise_timesteps_min"]
-    NOISE_MAX = args.compute_metrics_reconstruction["noise_timesteps_max"]+1
-    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_interval"])
+    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -115,7 +115,9 @@ def launch_compute_metrics_reconstruction(args):
 
 
     if args.noise["type"] == "simplex":
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], 
+                                                            schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], 
+                                                            persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
 
     elif args.noise["type"] == "gaussian":
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -186,7 +188,7 @@ def launch_compute_metrics_reconstruction(args):
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
-    infer_timesteps_visualize = args.compute_metrics_reconstruction["noise_timesteps_visualize"]
+    infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
 
     for i,(image_batch) in enumerate(test_reconstruction_loader):
@@ -230,7 +232,7 @@ def launch_compute_metrics_reconstruction(args):
 
         #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
-        axes[1, idx*2].set_title(f'Noisy {idx+1}, timesteps={infer_timesteps_visualize}')
+        axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
         axes[1, idx*2].axis('off')
 
         axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
