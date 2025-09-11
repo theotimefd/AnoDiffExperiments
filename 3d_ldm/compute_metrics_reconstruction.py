@@ -208,7 +208,7 @@ def launch_compute_metrics_reconstruction(args):
     metric_result_text += f"Mean PSNR: {np.mean([np.mean(item) for sublist in psnr.values() for item in sublist]):.3f}\n"
     metric_result_text += f"Mean SSIM: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"
 
-    fig, axes = plt.subplots(5, 8, figsize=(25, 20), constrained_layout=True)
+    fig, axes = plt.subplots(4, 8, figsize=(25, 17), constrained_layout=True)
     plt.tight_layout()
 
     for idx in range(min(4, test_reconstruction_images.shape[0])):
@@ -248,20 +248,9 @@ def launch_compute_metrics_reconstruction(args):
         axes[2, idx*2+1].hist(infered_image[infered_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[2, idx*2+1].set_ylim(0, 2000)
         axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
-
-        # Difference images
-        axes[3, idx*2].imshow(np.abs(infered_image-original_image), cmap='jet', vmin=0, vmax=1)
-        axes[3, idx*2].set_title(f'Difference {idx+1}')
-        axes[3, idx*2].axis('off')
-
-        axes[3, idx*2+1].hist(np.abs(infered_image-original_image).flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[3, idx*2+1].set_ylim(0, 2000)
-        axes[3, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
-
         axes[0, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[3, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
 
         # Arrow from original image to noisy image
         axes[0, idx*2].annotate( 
@@ -306,10 +295,10 @@ def launch_compute_metrics_reconstruction(args):
 
     plt.figtext(0.0, 0.27, "Reconstruction metrics for the whole test_reconstruction dataset", fontsize=16)
 
-    for ax in axes[4, 0:2]: # two merge two subplots
+    for ax in axes[3, 0:2]: # two merge two subplots
         ax.remove()
-    gs = axes[4, 0].get_gridspec()
-    axbig1 = fig.add_subplot(gs[4, 0:2])
+    gs = axes[3, 0].get_gridspec()
+    axbig1 = fig.add_subplot(gs[3, 0:2])
 
     # MSE plot
     axbig1.plot(NOISE_RANGE, [np.mean(mse[noise]) for noise in NOISE_RANGE], marker='o', label='MSE')
@@ -319,10 +308,10 @@ def launch_compute_metrics_reconstruction(args):
     axbig1.grid(True)
     axbig1.legend()
 
-    for ax in axes[4, 2:4]:
+    for ax in axes[3, 2:4]:
         ax.remove()
-    gs = axes[4, 4].get_gridspec()
-    axbig2 = fig.add_subplot(gs[4, 2:4])
+    gs = axes[3, 4].get_gridspec()
+    axbig2 = fig.add_subplot(gs[3, 2:4])
 
 
     # PSNR plot
@@ -333,10 +322,10 @@ def launch_compute_metrics_reconstruction(args):
     axbig2.grid(True)
     axbig2.legend()
 
-    for ax in axes[4, 4:6]:
+    for ax in axes[3, 4:6]:
         ax.remove()
-    gs = axes[4, 2].get_gridspec()
-    axbig3 = fig.add_subplot(gs[4, 4:6])
+    gs = axes[3, 2].get_gridspec()
+    axbig3 = fig.add_subplot(gs[3, 4:6])
 
     # SSIM plot
     axbig3.plot(NOISE_RANGE, [np.mean(ssim[noise]) for noise in NOISE_RANGE], marker='o', label='SSIM', color='green')
@@ -346,8 +335,8 @@ def launch_compute_metrics_reconstruction(args):
     axbig3.grid(True)
     axbig3.legend()
 
-    fig.delaxes(axes[4,6])
-    fig.delaxes(axes[4,7])
+    fig.delaxes(axes[3,6])
+    fig.delaxes(axes[3,7])
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
 

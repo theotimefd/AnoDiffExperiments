@@ -33,7 +33,7 @@ import utils.simplex_ddpm as simplex_ddpm
 
 
 def setup_ddp(rank, world_size):
-    print(f"Running DDP diffusion example on rank {rank}/world_size {world_size}.")
+    print(f"Running DDP diffusion training on rank {rank}/world_size {world_size}.")
     print(f"Initing to IP {os.environ['MASTER_ADDR']}")
     dist.init_process_group(
         backend="nccl", init_method="env://", timeout=timedelta(seconds=36000), rank=rank, world_size=world_size

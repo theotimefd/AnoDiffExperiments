@@ -3,12 +3,13 @@ import os
 import argparse
 import json
 from pathlib import Path
-from train_ddpm import launch_train
+from train_autoencoder import launch_train_autoencoder
+from train_diffusion import launch_train_diffusion
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 
 def main():
-    parser = argparse.ArgumentParser(description="2D DDPM training script")
+    parser = argparse.ArgumentParser(description="3D LDM training script")
     parser.add_argument(
         "-c",
         "--config-file",
@@ -47,10 +48,14 @@ def main():
 
     for step in args.pipeline:
         
-        if step == "train_ddpm":
-            print(f"Launching ddpm training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
-            launch_train(args)
+        if step == "train_autoencoder":
+            print(f"Launching autoencoder training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            launch_train_autoencoder(args)
         
+        if step == "train_diffusion":
+            print(f"Launching diffusion training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            launch_train_diffusion(args)
+
         if step == "compute_metrics_reconstruction" and rank == 0:
             print("Launching reconstruction metrics computation")
             launch_compute_metrics_reconstruction(args)
