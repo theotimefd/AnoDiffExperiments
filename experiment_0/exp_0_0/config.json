@@ -2,13 +2,13 @@
     "experiment_name": "experiment_0",
     "sub_experiment_name": "exp_0_0",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction"],
+    "pipeline": ["train_ddpm", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_flair_dataset_small",
-        "batch_size": 32,
+        "batch_size": 64,
         "num_workers": 16
     },
     "train_transforms": {
@@ -77,17 +77,17 @@
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
-        "num_timesteps_full_noise": 1000,
-        "num_timesteps_train_and_infer": 500
+        "num_timesteps_full_noise": 2000,
+        "noise_rate_train_and_infer": 0.35
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
         "spatial_dims": "@spatial_dims",
         "in_channels": 1,
         "out_channels": 1,
-        "channels":[128, 128, 256, 256],
-        "attention_levels":[false, true, true, true],
-        "num_head_channels":[0, 128, 128, 256]
+        "channels":[32, 64, 64, 64],
+        "attention_levels":[false, false, true, true],
+        "num_head_channels":8
     },
     "diffusion_train": {
         "max_epochs": 6000,
@@ -124,9 +124,9 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_timesteps_min": 200,
-        "noise_timesteps_max": 500,
-        "noise_interval": 50,
-        "noise_timesteps_visualize":300
+        "noise_rate_min": 0.15,
+        "noise_rate_max": 0.35,
+        "noise_timesteps_interval": 100,
+        "noise_rate_visualize":0.3
     }
 }

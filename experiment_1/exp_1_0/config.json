@@ -2,13 +2,13 @@
     "experiment_name": "experiment_1",
     "sub_experiment_name": "exp_1_0",
     "description": "2D DDPM on ADC with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
+    "pipeline": ["compute_metrics_reconstruction"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_adc_dataset_small",
-        "batch_size": 2,
+        "batch_size": 64,
         "num_workers": 16
     },
     "train_transforms": {
