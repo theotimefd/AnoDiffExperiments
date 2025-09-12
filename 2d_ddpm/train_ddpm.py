@@ -42,10 +42,13 @@ def setup_ddp(rank, world_size):
     device = torch.device(f"cuda:{rank}")
     return dist, device
 
-def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, device):
+def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, normalize, device):
     with autocast("cuda", enabled=True):
         # Generate random noise
-        noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape).to(device)
+        if normalize == False:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=False).to(device)
+        else:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=True).to(device) 
 
         # Create timesteps
         timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
@@ -156,7 +159,7 @@ def launch_train(args):
 
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()
-        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
+        scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
 
     elif args.noise["type"] == "gaussian":
         scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -213,7 +216,7 @@ def launch_train(args):
             optimizer.zero_grad(set_to_none=True)
 
             if args.noise["type"] == "simplex":
-                loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+                loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
             elif args.noise["type"] == "gaussian":
                 loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
 
@@ -236,7 +239,7 @@ def launch_train(args):
                 images = batch.to(device)
                 
                 if args.noise["type"] == "simplex":
-                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
                 elif args.noise["type"] == "gaussian":
                     val_loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
 

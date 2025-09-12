@@ -20,10 +20,12 @@ from tqdm import tqdm
 import random
 
 from monai.inferers import DiffusionInferer
-from monai.networks.nets import DiffusionModelUNet
+from monai.networks.nets import PatchDiscriminator
 from monai.networks.schedulers import DDPMScheduler
+from monai.losses import PatchAdversarialLoss, PerceptualLoss
 
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn import L1Loss, MSELoss
 import torch.distributed as dist
 
 import utils.custom_transforms as custom_transforms
@@ -41,6 +43,15 @@ def setup_ddp(rank, world_size):
     dist.barrier()
     device = torch.device(f"cuda:{rank}")
     return dist, device
+
+
+
+def KL_loss(z_mu, z_sigma):
+    kl_loss = 0.5 * torch.sum(
+        z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1,
+        dim=list(range(1, len(z_sigma.shape))),
+    )
+    return torch.sum(kl_loss) / kl_loss.shape[0]
 
 
 def launch_train_autoencoder(args):

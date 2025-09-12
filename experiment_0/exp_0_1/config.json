@@ -1,6 +1,6 @@
 {
     "experiment_name": "experiment_0",
-    "sub_experiment_name": "exp_0_0",
+    "sub_experiment_name": "exp_0_1",
     "description": "2D DDPM on flair with simplex noise",
     "pipeline": ["train_ddpm", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
@@ -77,7 +77,7 @@
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
-        "normalize": true,
+        "normalize": false,
         "num_timesteps_full_noise": 1000,
         "noise_rate_train_and_infer": 0.35
     },

@@ -11,7 +11,7 @@ from monai.networks.schedulers import DDPMScheduler
 
 
 #@torch.compile
-def generate_simplex_noise(simplexObj, shape, octaves=6, persistence=0.8, frequency=64):
+def generate_simplex_noise(simplexObj, shape, octaves=6, persistence=0.8, frequency=64, normalize=False):
     """Generate spatially correlated simplex noise."""
 
     simplexObj.newSeed()
@@ -25,6 +25,9 @@ def generate_simplex_noise(simplexObj, shape, octaves=6, persistence=0.8, freque
     elif len(shape) == 4 and shape[1] == 1: # to make it work with shapes of type (batch_size, 1, height, width)
         simplex = simplexObj.rand_3d_octaves(shape=(shape[0], shape[2], shape[3]), octaves=6, persistence=0.8, frequency=64)
         simplex = np.expand_dims(simplex, axis=1)
+    
+    if normalize:
+        simplex = np.clip(simplex/3.0 + 0.5, a_min=0.0, a_max=1.0)
 
     return torch.tensor(simplex, dtype=torch.float32)
 
@@ -44,7 +47,7 @@ class DDPMPredictionType(StrEnum):
 
 
 class SimplexDDPMScheduler(DDPMScheduler):
-    def __init__(self, *args, noise_scale=1.0, octaves=6, persistence=0.8, frequency=64, **kwargs):
+    def __init__(self, *args, noise_scale=1.0, octaves=6, persistence=0.8, frequency=64, normalize=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.noise_scale = noise_scale
         self.simplex_obj = simplex.Simplex_CLASS()
@@ -52,6 +55,7 @@ class SimplexDDPMScheduler(DDPMScheduler):
         self.octaves = octaves
         self.persistence = persistence
         self.frequency = frequency
+        self.normalize = normalize
 
     #def step(
     #    self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, generator: torch.Generator | None = None
@@ -111,7 +115,7 @@ class SimplexDDPMScheduler(DDPMScheduler):
         variance: torch.Tensor = torch.tensor(0)
         if timestep > 0:
             self.simplex_obj.newSeed()
-            noise = generate_simplex_noise(self.simplex_obj, shape=model_output.size(), octaves=self.octaves, persistence=self.persistence, frequency=self.frequency).to(model_output.device)
+            noise = generate_simplex_noise(self.simplex_obj, shape=model_output.size(), octaves=self.octaves, persistence=self.persistence, frequency=self.frequency, normalize=self.normalize).to(model_output.device)
 
             """ #TODO
             noise = torch.randn(

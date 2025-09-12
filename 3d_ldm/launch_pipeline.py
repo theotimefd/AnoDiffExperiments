@@ -9,6 +9,7 @@ from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 
 def main():
+    print("start of main")
     parser = argparse.ArgumentParser(description="3D LDM training script")
     parser.add_argument(
         "-c",
@@ -38,7 +39,7 @@ def main():
 
     if rank == 0:
         
-
+        print("making directories")
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/", exist_ok=True)
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
 
@@ -47,6 +48,7 @@ def main():
 
 
     for step in args.pipeline:
+        print(step)
         
         if step == "train_autoencoder":
             print(f"Launching autoencoder training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")

@@ -44,6 +44,8 @@ from monai.metrics import compute_iou
 
 from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
+import lpips
+
 def launch_compute_metrics_reconstruction(args):
     DEVICE_TYPE = "cuda:0"
     device = torch.device(DEVICE_TYPE)
@@ -117,7 +119,7 @@ def launch_compute_metrics_reconstruction(args):
     if args.noise["type"] == "simplex":
         infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], 
                                                             schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], 
-                                                            persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
+                                                            persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
 
     elif args.noise["type"] == "gaussian":
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -128,7 +130,10 @@ def launch_compute_metrics_reconstruction(args):
         
         simplexObj = simplex.Simplex_CLASS()
 
-        noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape).to(device)
+        if args.noise["normalize"] == False:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=False).to(device)
+        else:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=True).to(device) 
         
 
         if timesteps >= infer_scheduler.num_train_timesteps:
@@ -168,6 +173,10 @@ def launch_compute_metrics_reconstruction(args):
     mse = {noise: [] for noise in NOISE_RANGE} # for each noise level there is a list of mse values
     psnr = {noise: [] for noise in NOISE_RANGE}
     ssim = {noise: [] for noise in NOISE_RANGE}
+    lpips = {noise: [] for noise in NOISE_RANGE}
+
+    loss_fn_lpips = lpips.LPIPS(net='alex') # Higher means further/more different. Lower means more similar.
+
 
     for image_batch in tqdm(test_reconstruction_loader):
 
@@ -185,6 +194,7 @@ def launch_compute_metrics_reconstruction(args):
                 mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
                 ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
                 psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
+                lpips[noise_timesteps].append(np.mean(loss_fn.forward(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
@@ -204,11 +214,12 @@ def launch_compute_metrics_reconstruction(args):
     # ----------- PLOT -----------
 
     metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size})\n"
-    metric_result_text += f"Mean MSE: {np.mean([np.mean(item) for sublist in mse.values() for item in sublist]):.3f}\n"
-    metric_result_text += f"Mean PSNR: {np.mean([np.mean(item) for sublist in psnr.values() for item in sublist]):.3f}\n"
-    metric_result_text += f"Mean SSIM: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"
+    metric_result_text += f"Mean MSE ↓: {np.mean([np.mean(item) for sublist in mse.values() for item in sublist]):.3f}\n"
+    metric_result_text += f"Mean PSNR ↑: {np.mean([np.mean(item) for sublist in psnr.values() for item in sublist]):.3f}\n"
+    metric_result_text += f"Mean SSIM ↑: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"
+    metric_result_text += f"Mean SSIM ↓: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"
 
-    fig, axes = plt.subplots(5, 8, figsize=(25, 20), constrained_layout=True)
+    fig, axes = plt.subplots(5, 8, figsize=(25, 22), constrained_layout=True)
     plt.tight_layout()
 
     for idx in range(min(4, test_reconstruction_images.shape[0])):
@@ -312,7 +323,7 @@ def launch_compute_metrics_reconstruction(args):
     axbig1 = fig.add_subplot(gs[4, 0:2])
 
     # MSE plot
-    axbig1.plot(NOISE_RANGE, [np.mean(mse[noise]) for noise in NOISE_RANGE], marker='o', label='MSE')
+    axbig1.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(mse[noise]) for noise in NOISE_RANGE], marker='o', label='MSE')
     axbig1.set_title('Mean Squared Error (MSE)')
     axbig1.set_xlabel('Noise Timesteps')
     axbig1.set_ylabel('MSE')
@@ -326,9 +337,9 @@ def launch_compute_metrics_reconstruction(args):
 
 
     # PSNR plot
-    axbig2.plot(NOISE_RANGE, [np.mean(psnr[noise]) for noise in NOISE_RANGE], marker='o', label='PSNR', color='red')
+    axbig2.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(psnr[noise]) for noise in NOISE_RANGE], marker='o', label='PSNR', color='red')
     axbig2.set_title('Peak Signal-to-Noise Ratio (PSNR)')
-    axbig2.set_xlabel('Noise Timesteps')
+    axbig2.set_xlabel('Noise rate')
     axbig2.set_ylabel('PSNR')
     axbig2.grid(True)
     axbig2.legend()
@@ -339,15 +350,25 @@ def launch_compute_metrics_reconstruction(args):
     axbig3 = fig.add_subplot(gs[4, 4:6])
 
     # SSIM plot
-    axbig3.plot(NOISE_RANGE, [np.mean(ssim[noise]) for noise in NOISE_RANGE], marker='o', label='SSIM', color='green')
+    axbig3.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(ssim[noise]) for noise in NOISE_RANGE], marker='o', label='SSIM', color='green')
     axbig3.set_title('Structural Similarity Index (SSIM)')
-    axbig3.set_xlabel('Noise Timesteps')
+    axbig3.set_xlabel('Noise rate')
     axbig3.set_ylabel('SSIM')
     axbig3.grid(True)
     axbig3.legend()
 
-    fig.delaxes(axes[4,6])
-    fig.delaxes(axes[4,7])
+    for ax in axes[4, 6:8]:
+        ax.remove()
+    gs = axes[4, 2].get_gridspec()
+    axbig4 = fig.add_subplot(gs[4, 6:8])
+
+    # SSIM plot
+    axbig4.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(lpips[noise]) for noise in NOISE_RANGE], marker='o', label='LPIPS', color='black')
+    axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS)')
+    axbig4.set_xlabel('Noise rate')
+    axbig4.set_ylabel('LPIPS')
+    axbig4.grid(True)
+    axbig4.legend()
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
 

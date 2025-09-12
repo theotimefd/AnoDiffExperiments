@@ -42,6 +42,8 @@ from utils.utils import define_instance
 
 from monai.metrics import compute_iou
 
+import lpips
+
 
 
 def launch_compute_metrics_anomaly_detection(args):
@@ -148,7 +150,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
 
     if args.noise["type"] == "simplex":
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"])
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
 
     elif args.noise["type"] == "gaussian":
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
@@ -159,7 +161,10 @@ def launch_compute_metrics_anomaly_detection(args):
         
         simplexObj = simplex.Simplex_CLASS()
 
-        noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape).to(device)
+        if args.noise["normalize"] == False:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=False).to(device)
+        else:
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=True).to(device) 
         
 
         if timesteps >= infer_scheduler.num_train_timesteps:
