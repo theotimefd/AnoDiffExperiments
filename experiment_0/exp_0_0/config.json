@@ -2,7 +2,7 @@
     "experiment_name": "experiment_0",
     "sub_experiment_name": "exp_0_0",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["train_ddpm", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
+    "pipeline": ["compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",

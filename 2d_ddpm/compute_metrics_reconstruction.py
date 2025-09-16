@@ -173,9 +173,9 @@ def launch_compute_metrics_reconstruction(args):
     mse = {noise: [] for noise in NOISE_RANGE} # for each noise level there is a list of mse values
     psnr = {noise: [] for noise in NOISE_RANGE}
     ssim = {noise: [] for noise in NOISE_RANGE}
-    lpips = {noise: [] for noise in NOISE_RANGE}
+    lpips_dict = {noise: [] for noise in NOISE_RANGE}
 
-    loss_fn_lpips = lpips.LPIPS(net='alex') # Higher means further/more different. Lower means more similar.
+    loss_fn_lpips = lpips.LPIPS(net='alex').to(device) # Higher means further/more different. Lower means more similar.
 
 
     for image_batch in tqdm(test_reconstruction_loader):
@@ -194,7 +194,7 @@ def launch_compute_metrics_reconstruction(args):
                 mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
                 ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
                 psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
-                lpips[noise_timesteps].append(np.mean(loss_fn.forward(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
+                lpips_dict[noise_timesteps].append(np.mean(loss_fn_lpips.forward(infered.to(device), test_reconstruction_images).detach().cpu().numpy().flatten()))
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
@@ -241,14 +241,27 @@ def launch_compute_metrics_reconstruction(args):
         first_noisy_image_no_background[original_image < 0.01] = 0.0
         
 
-        #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
-        axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
-        axes[1, idx*2].axis('off')
+        
 
-        axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
-        axes[1, idx*2+1].set_ylim(0, 2000)
-        axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        if args.noise["normalize"]:
+            #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].axis('off')
+
+            axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[1, idx*2+1].set_ylim(0, 2000)
+            axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        else:
+            #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].axis('off')
+
+            axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
+            axes[1, idx*2+1].set_ylim(0, 2000)
+            axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+
 
         # Inferred images
         infered_image = infered[idx, 0].cpu().numpy()
@@ -363,7 +376,7 @@ def launch_compute_metrics_reconstruction(args):
     axbig4 = fig.add_subplot(gs[4, 6:8])
 
     # SSIM plot
-    axbig4.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(lpips[noise]) for noise in NOISE_RANGE], marker='o', label='LPIPS', color='black')
+    axbig4.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(lpips_dict[noise]) for noise in NOISE_RANGE], marker='o', label='LPIPS', color='black')
     axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS)')
     axbig4.set_xlabel('Noise rate')
     axbig4.set_ylabel('LPIPS')

@@ -42,6 +42,7 @@ from utils.utils import define_instance
 
 from monai.metrics import compute_iou
 
+import lpips
 
 
 def launch_compute_metrics_anomaly_detection(args):
@@ -201,6 +202,8 @@ def launch_compute_metrics_anomaly_detection(args):
         else:
             return image
 
+    def sample_thor(image, infer_scheduler, timesteps, timesteps_harmonization, return_intermediates=False):
+        pass
 
     def compute(image_loader, mask_loader):
 
