@@ -335,11 +335,11 @@ def launch_compute_metrics_reconstruction(args):
     gs = axes[4, 0].get_gridspec()
     axbig1 = fig.add_subplot(gs[4, 0:2])
 
-    # MSE plot
-    axbig1.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(mse[noise]) for noise in NOISE_RANGE], marker='o', label='MSE')
-    axbig1.set_title('Mean Squared Error (MSE)')
+    # PSNR plot
+    axbig1.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(psnr[noise]) for noise in NOISE_RANGE], marker='o', label='MSE')
+    axbig1.set_title('Peak Signal-to-Noise Ratio (PSNR) ↑')
     axbig1.set_xlabel('Noise Timesteps')
-    axbig1.set_ylabel('MSE')
+    axbig1.set_ylabel('PSNR')
     axbig1.grid(True)
     axbig1.legend()
 
@@ -349,11 +349,11 @@ def launch_compute_metrics_reconstruction(args):
     axbig2 = fig.add_subplot(gs[4, 2:4])
 
 
-    # PSNR plot
-    axbig2.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(psnr[noise]) for noise in NOISE_RANGE], marker='o', label='PSNR', color='red')
-    axbig2.set_title('Peak Signal-to-Noise Ratio (PSNR)')
+    # SSIM plot
+    axbig2.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(ssim[noise]) for noise in NOISE_RANGE], marker='o', label='PSNR', color='red')
+    axbig2.set_title('Structural Similarity Index Metric (SSIM) ↑')
     axbig2.set_xlabel('Noise rate')
-    axbig2.set_ylabel('PSNR')
+    axbig2.set_ylabel('SSIM')
     axbig2.grid(True)
     axbig2.legend()
 
@@ -362,11 +362,11 @@ def launch_compute_metrics_reconstruction(args):
     gs = axes[4, 2].get_gridspec()
     axbig3 = fig.add_subplot(gs[4, 4:6])
 
-    # SSIM plot
-    axbig3.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(ssim[noise]) for noise in NOISE_RANGE], marker='o', label='SSIM', color='green')
-    axbig3.set_title('Structural Similarity Index (SSIM)')
+    # MSE plot
+    axbig3.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(mse[noise]) for noise in NOISE_RANGE], marker='o', label='SSIM', color='green')
+    axbig3.set_title('Mean Squared Error (MSE) ↓')
     axbig3.set_xlabel('Noise rate')
-    axbig3.set_ylabel('SSIM')
+    axbig3.set_ylabel('MSE')
     axbig3.grid(True)
     axbig3.legend()
 
@@ -375,9 +375,9 @@ def launch_compute_metrics_reconstruction(args):
     gs = axes[4, 2].get_gridspec()
     axbig4 = fig.add_subplot(gs[4, 6:8])
 
-    # SSIM plot
+    # LPIPS plot
     axbig4.plot([noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE], [np.mean(lpips_dict[noise]) for noise in NOISE_RANGE], marker='o', label='LPIPS', color='black')
-    axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS)')
+    axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS) ↓')
     axbig4.set_xlabel('Noise rate')
     axbig4.set_ylabel('LPIPS')
     axbig4.grid(True)

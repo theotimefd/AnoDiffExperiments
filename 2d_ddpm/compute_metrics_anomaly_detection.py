@@ -392,7 +392,7 @@ def launch_compute_metrics_anomaly_detection(args):
     # Add overall title with metric results
     plt.suptitle(f"Healthy reconstruction for {EXPERIMENT_NAME}, large group", fontsize=16)
 
-    plt.figtext(0.0, 0.05, metrics_result_text, fontsize=16)
+    plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_anomaly_detection.png", transparent=False, dpi=150)
