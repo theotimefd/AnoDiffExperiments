@@ -1,8 +1,8 @@
 {
     "experiment_name": "experiment_0",
-    "sub_experiment_name": "exp_0_2",
+    "sub_experiment_name": "exp_0_5",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_thor_anomaly_detection"],
+    "pipeline": ["train_ddpm", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -24,7 +24,7 @@
             "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
         },
         {
-            "_target_": "utils.custom_transforms.Get2DSliceWithRandomOffset", "axis": 2, "fixed_offset": 0, "range_offset": 3
+            "_target_": "utils.custom_transforms.Get2DSliceWithRandomOffset", "axis": 2, "fixed_offset": 0, "range_offset": 15
         },
         {
             "_target_": "monai.transforms.RandScaleCrop", "roi_scale":0.9, "max_roi_scale":1.1, "random_size":true
@@ -91,7 +91,7 @@
         "num_head_channels":8
     },
     "diffusion_train": {
-        "max_epochs": 6000,
+        "max_epochs": 12000,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",

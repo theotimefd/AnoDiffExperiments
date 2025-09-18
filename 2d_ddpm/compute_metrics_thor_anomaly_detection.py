@@ -38,11 +38,14 @@ import pandas as pd
 import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
+import utils.thor_ddpm as thor_ddpm
 from utils.utils import define_instance
 
 from monai.metrics import compute_iou
 
-import lpips
+from scipy import stats
+import copy
+
 
 
 def launch_compute_metrics_anomaly_detection(args):
@@ -165,45 +168,71 @@ def launch_compute_metrics_anomaly_detection(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
 
+    timesteps_harmonization = np.linspace(NOISE_MIN, NOISE_MAX-1, num=7, dtype=int).tolist()
+
     @torch.no_grad()
-    def my_sample(image, infer_scheduler, timesteps, return_intermediates=False):
+    def sample_thor(image, infer_scheduler, timesteps=100, return_intermediates=False):
         
-        simplexObj = simplex.Simplex_CLASS()
-
-        noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape).to(device)
-        
-
         if timesteps >= infer_scheduler.num_train_timesteps:
             print(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)
-
+        
         timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
 
-        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
+        simplexObj = simplex.Simplex_CLASS()
+
+        original_image = copy.deepcopy(image)
+
+        if args.noise["type"] == "simplex":
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=args.noise["normalize"]).to(device)
+        if args.noise["type"] == "gaussian":
+            noise = torch.randn(image.shape).to(device)
+        
+
+        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device)
 
 
-        intermediates = []
-        intermediates_step = 20
+        intermediates_mixed_images_visualize = []
+        intermediates_pseudo_anomaly_masks = []
+        intermediates_pseudo_anomaly_masks_processed = []
 
                 
-        for t in range(timesteps, 0, -1): # va de timesteps à 0
+        for t in tqdm(range(timesteps, 0, -1)): # goes from timesteps to 0
             
-            model_output = model(
-                image, timesteps=torch.Tensor((t,)).to(device), context=None
-            )
-            #print(model_output.shape)
+            # compute previous image
+            model_output = model(image, timesteps=torch.Tensor((t,)).to(device), context=None)
+            image, image_before_step = infer_scheduler.step(model_output, t, image) # here image_before_step is just the image at the timestep+1
+                
             
-            image, _ = infer_scheduler.step(model_output, t, image)
-        
-            if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
-                intermediates.append(image)
+            if t in timesteps_harmonization:
+                
+                
+                pseudo_anomaly_mask, _, _ = thor_ddpm.get_anomaly_mask(copy.deepcopy(image_before_step), copy.deepcopy(original_image), device=device, hist_eq=False)
+                
+                intermediates_pseudo_anomaly_masks.append(pseudo_anomaly_mask)
+                pseudo_anomaly_mask = pseudo_anomaly_mask.cpu().detach().numpy()
+                
+
+                pseudo_anomaly_mask_processed = torch.Tensor(thor_ddpm.get_region_anomaly_mask(pseudo_anomaly_mask, kernel_size=6)).to(device).clip(0,1) # simple erosion dilation 
+                
+
+                pseudo_anomaly_mask_processed = pseudo_anomaly_mask_processed.clip(0,1) 
+
+                intermediates_pseudo_anomaly_masks_processed.append(pseudo_anomaly_mask_processed)
+
+                image_0 = pseudo_anomaly_mask_processed * image_before_step + (1-pseudo_anomaly_mask_processed) * original_image
+                
+                image_0 = torch.clamp(image_0, 0, 1)
+                
+                
+                image = infer_scheduler.add_noise(image_0, noise, torch.Tensor((t,)).to(device).long())
+                
+                intermediates_mixed_images_visualize.append(image)
 
         if return_intermediates:
-            return image, intermediates
+            return image, intermediates_mixed_images_visualize, intermediates_pseudo_anomaly_masks, intermediates_pseudo_anomaly_masks_processed
         else:
-            return image
+            return image, intermediates_pseudo_anomaly_masks_processed
 
-    def sample_thor(image, infer_scheduler, timesteps, timesteps_harmonization, return_intermediates=False):
-        pass
 
     def compute(image_loader, mask_loader):
 
@@ -225,13 +254,11 @@ def launch_compute_metrics_anomaly_detection(args):
             for infer_timesteps in num_timesteps_to_try:
                 with autocast(device_type=DEVICE_TYPE, enabled=True):
                     # Perform 3 inferences and average the results
-                    infered_images = []
-                    for _ in range(3):
-                        infered_images.append(my_sample(test_images, infer_scheduler, timesteps=infer_timesteps, return_intermediates=False))
-                    average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+                    _, pseudo_anomaly_masks_processed = sample_thor(test_images, infer_scheduler=infer_scheduler, timesteps=infer_timesteps, return_intermediates=False)
+                    final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
             
                 for threshold in thresholds_to_try:
-                    ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+                    ano_segmentation = torch.abs(final_anomaly_map) > threshold
                     iou_score = compute_iou(ano_segmentation, test_masks)
                     flattened_iou_score = iou_score.cpu().numpy().flatten()
                     flattened_iou_score[np.isnan(flattened_iou_score)] = 0.0
@@ -248,7 +275,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
     # ----------- COMPUTING METRICS -----------
 
-    metrics_result_text = ""
+    metrics_result_text = "Thor Anomaly Detection Metrics Results\n"
 
     # large group
     iou_scores_df_large_group = compute(test_anomaly_large_loader, test_masks_large_loader)
@@ -323,14 +350,12 @@ def launch_compute_metrics_anomaly_detection(args):
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
             # Perform 3 inferences and average the results
-            infered_images = []
-            for _ in range(3):
-                infered_images.append(my_sample(test_anomaly_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False))
-            average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+            _, pseudo_anomaly_masks_processed = sample_thor(test_anomaly_images, infer_scheduler=infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False)
+            final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
 
     # ----------- PLOT -----------
 
-    fig, axes = plt.subplots(5, 8, figsize=(25, 17), constrained_layout=True)
+    fig, axes = plt.subplots(4, 8, figsize=(20, 17), constrained_layout=True)
     plt.tight_layout()
 
     for idx in range(min(4, test_anomaly_images.shape[0])):
@@ -348,50 +373,41 @@ def launch_compute_metrics_anomaly_detection(args):
         
 
         # 3x average inferred images
-        print(average_infered_image.shape)
-        average_infered_image_cpu = average_infered_image[idx, 0].cpu().numpy()
-        axes[1, idx*2].imshow(average_infered_image_cpu, cmap='gray', vmin=0, vmax=1)
+        #print(average_infered_image.shape)
+        final_anomaly_map = final_anomaly_map.squeeze()[idx].cpu().numpy()
+        axes[1, idx*2].imshow(final_anomaly_map, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(average_infered_image_cpu[average_infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(final_anomaly_map[final_anomaly_map>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
-        # Difference images
-        difference_image = np.abs(original_image - average_infered_image_cpu)
-        axes[2, idx*2].imshow(difference_image, cmap='jet', vmin=0, vmax=1)
-        axes[2, idx*2].set_title(f'Difference {idx+1}')
-        axes[2, idx*2].axis('off')
-
-        axes[2, idx*2+1].hist(difference_image[difference_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[2, idx*2+1].set_ylim(0, 2000)
-        axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # ground truth masks
         ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
-        axes[3, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
-        axes[3, idx*2].set_title(f'Ground Truth {idx+1}')
-        axes[3, idx*2].axis('off')
+        axes[2, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
+        axes[2, idx*2].set_title(f'Ground Truth {idx+1}')
+        axes[2, idx*2].axis('off')
 
-        axes[3, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[3, idx*2+1].set_ylim(0, 2000)
-        axes[3, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+        axes[2, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[2, idx*2+1].set_ylim(0, 2000)
+        axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         axes[0, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[3, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+        axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
 
     
     # Add an empty row to create more whitespace for the figtext
     for idx in range(8):
-        axes[4, idx].axis('off')
+        axes[3, idx].axis('off')
     # Add overall title with metric results
-    plt.suptitle(f"Healthy reconstruction for {EXPERIMENT_NAME}, large group", fontsize=16)
+    plt.suptitle(f"Healthy THOR reconstruction for {EXPERIMENT_NAME}, large group", fontsize=16)
 
     plt.figtext(0.0, 0.1, metrics_result_text, fontsize=16)
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_anomaly_detection.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics__thor_anomaly_detection.png", transparent=False, dpi=150)
 

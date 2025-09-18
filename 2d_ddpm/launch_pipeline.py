@@ -6,6 +6,7 @@ from pathlib import Path
 from train_ddpm import launch_train
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
+from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
 
 def main():
     parser = argparse.ArgumentParser(description="2D DDPM training script")
@@ -52,12 +53,16 @@ def main():
             launch_train(args)
         
         if step == "compute_metrics_reconstruction" and rank == 0:
-            print("Launching reconstruction metrics computation")
+            print("Launching compute_metrics_reconstruction")
             launch_compute_metrics_reconstruction(args)
         
         if step=="compute_metrics_anomaly_detection" and rank==0:
-            print("Launching anomaly detection metrics computation")
+            print("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)
+        
+        if step=="compute_metrics_thor_anomaly_detection" and rank==0:
+            print("Launching compute_metrics_thor_anomaly_detection")
+            launch_compute_metrics_thor_anomaly_detection(args)
             
     
 
