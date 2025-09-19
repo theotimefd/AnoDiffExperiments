@@ -13,7 +13,7 @@ from scipy import stats
 
 import lpips
 
-l_pips_sq = lpips.LPIPS(pretrained=True, pnet_rand=False, net='squeeze', eval_mode=True, spatial=True, lpips=True)
+
 
 def lpips_loss(anomaly_img, ph_img, device, retPerLayer=False):
     """
@@ -30,13 +30,15 @@ def lpips_loss(anomaly_img, ph_img, device, retPerLayer=False):
     anomaly_img = ((anomaly_img * 2) - 1).repeat(1,3,1,1)
     ph_img = ((ph_img * 2) - 1).repeat(1,3,1,1)
 
-    loss_lpips = l_pips_sq.to(device)(anomaly_img, ph_img, normalize=True, retPerLayer=retPerLayer)
+    l_pips_sq = lpips.LPIPS(pretrained=True, pnet_rand=False, net='squeeze', eval_mode=True, spatial=True, lpips=True).to(device)
+
+    loss_lpips = l_pips_sq(anomaly_img, ph_img, normalize=True, retPerLayer=retPerLayer)
     if retPerLayer:
         loss_lpips = loss_lpips[1][0]
     return loss_lpips.cpu().detach().numpy()
 
-def get_saliency( x, x_rec, retPerLayer=False):
-    saliency = lpips_loss(x, x_rec, retPerLayer)
+def get_saliency( x, x_rec, device, retPerLayer=False):
+    saliency = lpips_loss(x, x_rec, device, retPerLayer)
     saliency = gaussian_filter(saliency, sigma=2)
     return saliency
 
@@ -60,7 +62,7 @@ def get_anomaly_mask(x, x_rec, device, hist_eq=False, retPerLayer=False):
 
     x_res = compute_residual(x, x_rec, hist_eq=hist_eq)
 
-    lpips_mask = get_saliency(x, x_rec, retPerLayer=retPerLayer).clip(0,1) 
+    lpips_mask = get_saliency(x, x_rec, device, retPerLayer=retPerLayer).clip(0,1) 
 
     x_res2 = np.asarray([(x_res[i] / (np.percentile(x_res[i], 95) + 1e-8)) for i in range(x_res.shape[0])]).clip(0, 1)
 

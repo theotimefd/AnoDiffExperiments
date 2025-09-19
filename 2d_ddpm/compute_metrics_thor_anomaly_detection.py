@@ -48,7 +48,7 @@ import copy
 
 
 
-def launch_compute_metrics_anomaly_detection(args):
+def launch_compute_metrics_thor_anomaly_detection(args):
     DEVICE_TYPE = "cuda:0"
     device = torch.device(DEVICE_TYPE)
 
@@ -196,7 +196,7 @@ def launch_compute_metrics_anomaly_detection(args):
         intermediates_pseudo_anomaly_masks_processed = []
 
                 
-        for t in tqdm(range(timesteps, 0, -1)): # goes from timesteps to 0
+        for t in range(timesteps, 0, -1): # goes from timesteps to 0
             
             # compute previous image
             model_output = model(image, timesteps=torch.Tensor((t,)).to(device), context=None)
@@ -258,8 +258,8 @@ def launch_compute_metrics_anomaly_detection(args):
                     final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
             
                 for threshold in thresholds_to_try:
-                    ano_segmentation = torch.abs(final_anomaly_map) > threshold
-                    iou_score = compute_iou(ano_segmentation, test_masks)
+                    ano_segmentation = np.abs(final_anomaly_map) > threshold
+                    iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks) #TODO here 19 sept 2025 16:30
                     flattened_iou_score = iou_score.cpu().numpy().flatten()
                     flattened_iou_score[np.isnan(flattened_iou_score)] = 0.0
 
@@ -371,15 +371,13 @@ def launch_compute_metrics_anomaly_detection(args):
         axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
         
         
-
         # 3x average inferred images
         #print(average_infered_image.shape)
-        final_anomaly_map = final_anomaly_map.squeeze()[idx].cpu().numpy()
-        axes[1, idx*2].imshow(final_anomaly_map, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].imshow(final_anomaly_map[idx][0], cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(final_anomaly_map[final_anomaly_map>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(final_anomaly_map[idx][0][final_anomaly_map[idx][0]>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
