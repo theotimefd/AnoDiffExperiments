@@ -238,7 +238,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
 
 
         num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-        thresholds_to_try = np.arange(0.0, 1.0, 0.01) # from 0.0 to 1.0 with step 0.05
+        thresholds_to_try = np.arange(0.0, 0.6, 0.01) # from 0.0 to 0.6 with step 0.01 TODO
 
         iou_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
         iou_scores_df.fillna(0.0, inplace=True)
@@ -294,7 +294,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     metrics_result_text += f"Best Number of Timesteps (large group): {best_num_timesteps}\n"
     metrics_result_text += "\n"
 
-    iou_scores_df_large_group.to_csv("exp_3_6_scores_iou_large_group.csv")
+    iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_THOR_scores_iou_large_group.csv")
 
     # medium group
     iou_scores_df_medium_group = compute(test_anomaly_medium_loader, test_masks_medium_loader)
@@ -313,7 +313,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     metrics_result_text += f"Best Number of Timesteps (medium group): {best_num_timesteps}\n"
     metrics_result_text += "\n"
 
-    iou_scores_df_medium_group.to_csv("exp_3_6_scores_iou_medium_group.csv")
+    iou_scores_df_medium_group.to_csv(f"{SUB_EXPERIMENT_NAME}_THOR_scores_iou_medium_group.csv")
 
     # small group
     iou_scores_df_small_group = compute(test_anomaly_small_loader, test_masks_small_loader)
@@ -331,7 +331,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     print(f"Best Number of Timesteps (small group): {best_num_timesteps}")
     metrics_result_text += f"Best Number of Timesteps (small group): {best_num_timesteps}\n"
 
-    iou_scores_df_small_group.to_csv("exp_3_6_scores_iou_small_group.csv")
+    iou_scores_df_small_group.to_csv(f"{SUB_EXPERIMENT_NAME}_THOR_scores_iou_small_group.csv")
 
 
 
@@ -373,7 +373,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         
         # 3x average inferred images
         #print(average_infered_image.shape)
-        axes[1, idx*2].imshow(final_anomaly_map[idx][0], cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].imshow(final_anomaly_map[idx][0], cmap='jet', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
@@ -402,10 +402,10 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     for idx in range(8):
         axes[3, idx].axis('off')
     # Add overall title with metric results
-    plt.suptitle(f"Healthy THOR reconstruction for {EXPERIMENT_NAME}, large group", fontsize=16)
+    plt.suptitle(f"THOR anomaly detection for {SUB_EXPERIMENT_NAME}, large group", fontsize=16)
 
-    plt.figtext(0.0, 0.1, metrics_result_text, fontsize=16)
+    plt.figtext(0.05, 0.08, metrics_result_text, fontsize=16)
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics__thor_anomaly_detection.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_thor_anomaly_detection.png", transparent=False, dpi=150)
 

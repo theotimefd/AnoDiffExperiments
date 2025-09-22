@@ -46,9 +46,9 @@ def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, norm
     with autocast("cuda", enabled=True):
         # Generate random noise
         if normalize == False:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=False).to(device)
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=False).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
         else:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=True).to(device) 
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=True).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025) 
 
         # Create timesteps
         timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
@@ -62,7 +62,7 @@ def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, norm
 def compute_loss_gaussian(images, model, inferer, num_timesteps, device):
     with autocast("cuda", enabled=True):
         # Generate random noise
-        noise = torch.randn_like(images).to(device)
+        noise = torch.randn_like(images).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
 
         # Create timesteps
         timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
@@ -199,7 +199,7 @@ def launch_train(args):
 
     for epoch in range(max_epochs):
         model.train()
-        if rank==0 and args.diffusion_train["lr_scheduler"]!= "none":
+        if rank==0 and args.diffusion_train["lr_scheduler"] != "none":
             lr_scheduler.step()
         if ddp_bool:
             # if ddp, distribute data across n gpus
@@ -212,7 +212,7 @@ def launch_train(args):
 
         #for step, batch in progress_bar:
         for step, batch in enumerate(train_loader):
-            images = batch.to(device)
+            images = batch.to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
             optimizer.zero_grad(set_to_none=True)
 
             if args.noise["type"] == "simplex":
@@ -283,6 +283,3 @@ def launch_train(args):
         
         print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
     
-
-if __name__ == "__main__":
-    main()

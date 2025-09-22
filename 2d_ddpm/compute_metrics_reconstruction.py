@@ -328,7 +328,7 @@ def launch_compute_metrics_reconstruction(args):
 
     plt.figtext(0.0, -0.1, metric_result_text, fontsize=16)
 
-    plt.figtext(0.0, 0.20, "Reconstruction metrics for the whole test_reconstruction dataset", fontsize=16)
+    plt.figtext(0.0, 0.22, "Reconstruction metrics for the whole test_reconstruction dataset", fontsize=16)
 
     for ax in axes[4, 0:2]: # two merge two subplots
         ax.remove()

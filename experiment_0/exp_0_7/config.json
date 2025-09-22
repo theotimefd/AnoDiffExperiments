@@ -1,14 +1,14 @@
 {
     "experiment_name": "experiment_0",
-    "sub_experiment_name": "exp_0_6",
+    "sub_experiment_name": "exp_0_7",
     "description": "2D DDPM on flair with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction", "compute_metrics_anomaly_detection", "compute_metrics_thor_anomaly_detection"],
+    "pipeline": ["compute_metrics_thor_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_flair_dataset_small",
-        "batch_size": 4,
+        "batch_size": 16,
         "num_workers": 16
     },
     "train_transforms": {
@@ -88,10 +88,11 @@
         "out_channels": 1,
         "channels":[32, 64, 64, 64],
         "attention_levels":[false, true, true, true],
-        "num_head_channels":8
+        "num_head_channels":8,
+        "use_flash_attention":true
     },
     "diffusion_train": {
-        "max_epochs": 12000,
+        "max_epochs": 6000,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",

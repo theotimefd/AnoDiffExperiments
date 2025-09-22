@@ -40,7 +40,7 @@ import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import define_instance
 
-from monai.metrics import compute_iou
+from monai.metrics import compute_iou, DiceMetric
 
 import lpips
 
@@ -211,10 +211,13 @@ def launch_compute_metrics_anomaly_detection(args):
 
 
         num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-        thresholds_to_try = np.arange(0.0, 1.0, 0.01) # from 0.0 to 1.0 with step 0.05
+        thresholds_to_try = np.arange(0.0, 0.6, 0.01) # from 0.0 to 0.6 with step 0.05
 
         iou_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
         iou_scores_df.fillna(0.0, inplace=True)
+
+        dice_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
+        dice_scores_df.fillna(0.0, inplace=True)
 
 
         for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
@@ -234,9 +237,12 @@ def launch_compute_metrics_anomaly_detection(args):
             
                 for threshold in thresholds_to_try:
                     ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+
                     iou_score = compute_iou(ano_segmentation, test_masks)
                     flattened_iou_score = iou_score.cpu().numpy().flatten()
                     flattened_iou_score[np.isnan(flattened_iou_score)] = 0.0
+
+                    #dice_score = 
 
                     if np.isnan(iou_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
                         iou_scores_df.loc[infer_timesteps, threshold] = np.sum(flattened_iou_score)
@@ -269,7 +275,7 @@ def launch_compute_metrics_anomaly_detection(args):
     metrics_result_text += f"Best Number of Timesteps (large group): {best_num_timesteps}\n"
     metrics_result_text += "\n"
 
-    iou_scores_df_large_group.to_csv("exp_3_6_scores_iou_large_group.csv")
+    iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_scores_iou_large_group.csv")
 
     # medium group
     iou_scores_df_medium_group = compute(test_anomaly_medium_loader, test_masks_medium_loader)
@@ -288,7 +294,7 @@ def launch_compute_metrics_anomaly_detection(args):
     metrics_result_text += f"Best Number of Timesteps (medium group): {best_num_timesteps}\n"
     metrics_result_text += "\n"
 
-    iou_scores_df_medium_group.to_csv("exp_3_6_scores_iou_medium_group.csv")
+    iou_scores_df_medium_group.to_csv(f"{SUB_EXPERIMENT_NAME}_scores_iou_medium_group.csv")
 
     # small group
     iou_scores_df_small_group = compute(test_anomaly_small_loader, test_masks_small_loader)
@@ -306,7 +312,7 @@ def launch_compute_metrics_anomaly_detection(args):
     print(f"Best Number of Timesteps (small group): {best_num_timesteps}")
     metrics_result_text += f"Best Number of Timesteps (small group): {best_num_timesteps}\n"
 
-    iou_scores_df_small_group.to_csv("exp_3_6_scores_iou_small_group.csv")
+    iou_scores_df_small_group.to_csv(f"{SUB_EXPERIMENT_NAME}_scores_iou_small_group.csv")
 
 
 
