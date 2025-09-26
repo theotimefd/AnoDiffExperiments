@@ -168,7 +168,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
 
-    timesteps_harmonization = np.linspace(NOISE_MIN, NOISE_MAX-1, num=7, dtype=int).tolist()
+    timesteps_harmonization = np.linspace(10, NOISE_MAX-1, num=7, dtype=int).tolist()
 
     @torch.no_grad()
     def sample_thor(image, infer_scheduler, timesteps=100, return_intermediates=False):

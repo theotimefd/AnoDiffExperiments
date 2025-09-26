@@ -22,7 +22,7 @@ from spark.Spark_2D import SparK_2D
 #ROOT_DIR = "/home/fehrdelt/bettik/"
 ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 EXPERIMENT_NAME = "experiment_cDDPM_spark2D_AE"
-SUB_EXPERIMENT_NAME = "cDDPM_1"
+SUB_EXPERIMENT_NAME = "cDDPM_2"
 MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
 os.makedirs(MODELS_DIR, exist_ok=True)
 device = torch.cuda.set_device("cuda:0")
@@ -58,7 +58,7 @@ val_datalist = val_images_path
 
 #test_unhealthy_datalist = test_unhealthy_images_path
 
-batch_size = 32
+batch_size = 64
 num_workers = 8
 
 
@@ -104,7 +104,7 @@ val_loader = DataLoader(
 
 
 # Load the YAML file
-with open(f'{ROOT_DIR}/AnoDiffExperiments/2d_cddpm/2d_ddpm_cond_spark.yaml', 'r') as file:
+with open(f'{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/2d_ddpm_cond_spark.yaml', 'r') as file:
     cfg = yaml.safe_load(file)
 
 model = SparK_2D(cfg).to(device)
@@ -161,7 +161,8 @@ for epoch in range(max_epochs):
         
         optimizer.zero_grad(set_to_none=True)
 
-        active_ex, reco, loss, latent = model(images)
+        with autocast("cuda", enabled=True):
+            active_ex, reco, loss, latent = model(images)
         loss = L1({'x_hat':reco},images)['recon_error'] + cfg.get('delta_mask',0) * loss 
 
         scaler.scale(loss).backward()
@@ -182,7 +183,8 @@ for epoch in range(max_epochs):
         for step, batch in enumerate(val_loader):
             images = batch.to(device)
             
-            active_ex, reco, val_loss, latent = model(images)
+            with autocast("cuda", enabled=True):
+                active_ex, reco, val_loss, latent = model(images)
             val_loss = L1({'x_hat':reco},images)['recon_error'] + cfg.get('delta_mask',0) * val_loss 
 
             val_epoch_loss += val_loss.item()

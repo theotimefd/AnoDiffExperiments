@@ -2,9 +2,9 @@
 
 # to execute this experiment run:
 # python run.py experiment=example_full.yaml
-backbone: resnet50
+backbone: resnet101
 cfg:
-  backbone: resnet50
+  backbone: resnet101
 defaults:
   - override /trainer: default.yaml # override trainer to null so it's not loaded from main config defaults...
   - override /model: Spark_2D.yaml
@@ -16,7 +16,7 @@ datamodule:
     mode: t2 
 model:
   cfg: 
-    backbone: resnet50
+    backbone: resnet101
     loss_on_mask: True
     mask_ratio: 0.65
 num_folds: 1
