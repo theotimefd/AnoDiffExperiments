@@ -12,6 +12,7 @@ BETTIK_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 Final_ADC_Dataset_AINI_stroke_ait = "datasets/final_adc_dataset_small/AIT_final_registered/"
 Final_ADC_Dataset_Dallas = "datasets/final_adc_dataset_small/Dallas_registered/"
 Final_ADC_Dataset_HCP_YA = "datasets/final_adc_dataset_small/HCP-YA_registered/"
+Final_ADC_Dataset_IXI = "datasets/final_adc_dataset_small/ixi_registered/"
 
 filelist_aini_stroke_adc = os.listdir(BETTIK_DIR+Final_ADC_Dataset_AINI_stroke_ait)
 filelist_aini_stroke_adc = [Final_ADC_Dataset_AINI_stroke_ait + item for item in filelist_aini_stroke_adc]
@@ -22,7 +23,10 @@ filelist_dallas = [Final_ADC_Dataset_Dallas + item for item in filelist_dallas]
 filelist_hcp_ya = os.listdir(BETTIK_DIR+Final_ADC_Dataset_HCP_YA)
 filelist_hcp_ya = [Final_ADC_Dataset_HCP_YA + item for item in filelist_hcp_ya]
 
-combined_filelist = filelist_aini_stroke_adc + filelist_dallas + filelist_hcp_ya
+filelist_ixi = os.listdir(BETTIK_DIR+Final_ADC_Dataset_IXI)
+filelist_ixi = [Final_ADC_Dataset_IXI + item for item in filelist_ixi]
+
+combined_filelist = filelist_aini_stroke_adc + filelist_dallas + filelist_hcp_ya + filelist_ixi
 random.shuffle(combined_filelist)
 
 

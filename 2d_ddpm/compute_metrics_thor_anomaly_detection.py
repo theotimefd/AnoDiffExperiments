@@ -91,6 +91,18 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         test_anomaly_images = sorted(glob.glob(ROOT_DIR+"datasets/final_flair_dataset_small/brats_registered/*.nii.gz"))[:300] #otherwise there are too many images (1200)
         test_masks = sorted(glob.glob(ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/*.nii.gz"))[:300] # TODO
 
+        # Read the CSV file and put every line in a list
+        masks_to_exclude = []
+        
+        with open(ROOT_DIR+"AnoDiffExperiments/data_splits_lists/final_flair_dataset_small/exclude_brats_middle_slice.csv", 'r') as f:
+            for line in f:
+                masks_to_exclude.append(line.strip())
+        images_to_exclude = [name.replace("seg", "t2f") for name in masks_to_exclude]
+
+        test_anomaly_images = [path for path in test_anomaly_images if os.path.basename(path) not in images_to_exclude]
+        test_masks = [path for path in test_masks if os.path.basename(path) not in masks_to_exclude]
+        #print(test_anomaly_images)
+
         num_workers = 4
         ano_batch_size = 32
 
