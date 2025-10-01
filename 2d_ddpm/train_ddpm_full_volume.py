@@ -74,7 +74,7 @@ def compute_loss_gaussian(images, model, inferer, num_timesteps, device):
         return loss
 
 
-def launch_train(args):
+def launch_train_full_volume(args):
 
     ROOT_DIR = args.root_dir
     EXPERIMENT_NAME = args.experiment_name
@@ -151,8 +151,8 @@ def launch_train(args):
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=(not ddp_bool), num_workers=num_workers, pin_memory=True, sampler=train_sampler
     )
-    val_loader = DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, sampler=val_sampler
+    val_loader = DataLoader( # smaller batch size for validation since we are validating on full volumes
+        val_ds, batch_size=5, shuffle=False, num_workers=num_workers, pin_memory=True, sampler=val_sampler
     )
 
     model = define_instance(args, "network_def").to(device)
@@ -238,12 +238,16 @@ def launch_train(args):
             for step, batch in enumerate(val_loader):
                 images = batch.to(device)
                 
-                if args.noise["type"] == "simplex":
-                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
-                elif args.noise["type"] == "gaussian":
-                    val_loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+                images = images[..., args.dataset["slice_indexes_start"]:args.dataset["slice_indexes_end"]] # TODO determine the number of slices to validate on    
+                
+                for slice_idx in range(images.shape[-1]):
 
-                val_epoch_loss += val_loss.item()
+                    if args.noise["type"] == "simplex":
+                        val_loss = compute_loss_simplex(images[..., slice_idx], simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
+                    elif args.noise["type"] == "gaussian":
+                        val_loss = compute_loss_gaussian(images[..., slice_idx], model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+
+                    val_epoch_loss += val_loss.item()
 
                 #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 from train_ddpm import launch_train
+from train_ddpm_full_volume import launch_train_full_volume
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
@@ -51,6 +52,10 @@ def main():
         if step == "train_ddpm":
             print(f"Launching ddpm training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train(args)
+
+        if step == "train_ddpm_full_volume":
+            print(f"Launching ddpm full volume training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            launch_train_full_volume(args)
         
         if step == "compute_metrics_reconstruction" and rank == 0:
             print("Launching compute_metrics_reconstruction")

@@ -70,6 +70,41 @@ class Get2DSliceWithRandomOffset(transforms.RandomizableTransform):
         elif self.axis==2:
             return data[:, :, :,data.shape[3]//2+self.fixed_offset+self.rand_offset]
 
+class Get2DSliceFromIndexes(transforms.RandomizableTransform):
+    """
+    Will return a random slice from the specified indexes.
+    Args:
+        indexes_start: The starting index for the random slice.
+        indexes_end: The ending index for the random slice.
+    """
+
+    def __init__(
+        self,
+        axis: int = 0,
+        indexes_start: int = 0,
+        indexes_end: int = 15
+    ):
+        super().__init__()
+        self.axis = axis
+        self.indexes_start = indexes_start
+        self.indexes_end = indexes_end
+
+    def randomize(self):
+        super().randomize(None)
+        self.rand_offset = random.randint(self.indexes_start, self.indexes_end)
+
+    def __call__(self, data):
+        #print(data.shape)
+        self.randomize()
+
+        #print(self.rand_offset)
+        if self.axis==0:
+            return data[:, self.rand_offset,:,:]
+        elif self.axis==1:
+            return data[:, :,self.rand_offset,:]
+        elif self.axis==2:
+            return data[:, :, :,self.rand_offset]
+
 
 class SetBackgroundToZero(transforms.Transform):
     """

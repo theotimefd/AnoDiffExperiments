@@ -344,7 +344,7 @@ def launch_compute_metrics_anomaly_detection(args):
         metrics_result_text += f"Best Number of Timesteps (large group): {best_num_timesteps}\n"
         metrics_result_text += "\n"
 
-        iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_scores_iou_large_group.csv")
+        iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_scores_iou_large_group.csv")
 
         # medium group
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute(test_anomaly_medium_loader, test_masks_medium_loader)
@@ -487,5 +487,5 @@ def launch_compute_metrics_anomaly_detection(args):
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_metrics_anomaly_detection.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection.png", transparent=False, dpi=150)
 

@@ -11,6 +11,7 @@ BETTIK_DIR = "/home/fehrdelt/bettik/"
 
 final_flair_dataset_dallas = "datasets/final_flair_dataset_small/dallas_registered/"
 final_flair_dataset_lemon = "datasets/final_flair_dataset_small/lemon_registered/"
+final_flair_dataset_oasis = "datasets/final_flair_dataset_small/oasis_registered/"
 
 filelist_dallas = os.listdir(BETTIK_DIR+final_flair_dataset_dallas)
 filelist_dallas = [final_flair_dataset_dallas + item for item in filelist_dallas]
@@ -18,7 +19,10 @@ filelist_dallas = [final_flair_dataset_dallas + item for item in filelist_dallas
 filelist_lemon = os.listdir(BETTIK_DIR+final_flair_dataset_lemon)
 filelist_lemon = [final_flair_dataset_lemon + item for item in filelist_lemon]
 
-combined_filelist = filelist_dallas + filelist_lemon
+filelist_oasis = os.listdir(BETTIK_DIR+final_flair_dataset_oasis)
+filelist_oasis = [final_flair_dataset_oasis + item for item in filelist_oasis]
+
+combined_filelist = filelist_dallas + filelist_lemon + filelist_oasis
 random.shuffle(combined_filelist)
 
 
@@ -38,7 +42,7 @@ if EXCLUDE_FILES and os.path.exists(exclude_file_path):
     with open(exclude_file_path, "r") as csvfile:
         reader = csv.reader(csvfile)
         excluded_files = ["datasets/final_flair_dataset_small/" + row[0] for row in reader]
-
+#print("Excluded files:", excluded_files)
 
 with open("train.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)

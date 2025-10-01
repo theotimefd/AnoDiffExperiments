@@ -1,15 +1,18 @@
 {
     "experiment_name": "experiment_1",
     "sub_experiment_name": "exp_1_1",
-    "description": "2D DDPM on ADC with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
+    "description": "2D DDPM on flair with simplex noise, validation on whole volume",
+    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection", "compute_metrics_thor_anomaly_detection"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_adc_dataset_small",
-        "batch_size": 64,
-        "num_workers": 16
+        "name": "final_adc_dataset_small_added_ixi",
+        "test": "isles",
+        "batch_size": 16,
+        "num_workers": 16,
+        "slice_indexes_start":22,
+        "slice_indexes_end": 94
     },
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
@@ -24,7 +27,7 @@
             "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
         },
         {
-            "_target_": "utils.custom_transforms.Get2DSliceWithRandomOffset", "axis": 2, "fixed_offset": 0, "range_offset": 10
+            "_target_": "utils.custom_transforms.Get2DSliceFromIndexes", "axis": 2, "indexes_start": "@slice_indexes_start", "indexes_end": "@slice_indexes_end"
         },
         {
             "_target_": "monai.transforms.RandScaleCrop", "roi_scale":0.9, "max_roi_scale":1.1, "random_size":true
@@ -33,10 +36,10 @@
             "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
         },
         {
-            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
         },
         {
-            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
+            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
         },
         {
             "_target_": "monai.transforms.RandFlip", "prob": 0.5, "spatial_axis": 0
@@ -55,16 +58,13 @@
                 "_target_": "monai.transforms.EnsureChannelFirst"
             },
             {
-                "_target_": "utils.custom_transforms.Get2DSlice", "axis": 2
+                "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
             },
             {
-                "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
+                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
             },
             {
-                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
-            },
-            {
-                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             {
                 "_target_": "utils.custom_transforms.SetBackgroundToZero"
@@ -77,7 +77,8 @@
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
-        "num_timesteps_full_noise": 2000,
+        "normalize": false,
+        "num_timesteps_full_noise": 1000,
         "noise_rate_train_and_infer": 0.35
     },
     "network_def": {
@@ -86,18 +87,19 @@
         "in_channels": 1,
         "out_channels": 1,
         "channels":[32, 64, 64, 64],
-        "attention_levels":[false, false, true, true],
-        "num_head_channels":8
+        "attention_levels":[false, true, true, true],
+        "num_head_channels":8,
+        "use_flash_attention":true
     },
     "diffusion_train": {
         "max_epochs": 6000,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",
-            "lr": 2e-5
+            "lr": 1.4e-5
         },
-        "lr_scheduler": "MultiStepLR",
-        "lr_scheduler_milestones": [2000, 4000],
+        "lr_scheduler": "none",
+        "lr_scheduler_milestones": [1000],
         "ema":true
     },
     "compute_metrics_reconstruction":{
@@ -115,10 +117,10 @@
                 "_target_": "transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
             },
             "transform_6":{
-                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 1000.0
+                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
             },
             "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":3000.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             "transform_9":{
                 "_target_": "custom_transforms.SetBackgroundToZero"
@@ -126,7 +128,7 @@
         },
         "noise_rate_min": 0.15,
         "noise_rate_max": 0.35,
-        "noise_timesteps_interval": 100,
-        "noise_rate_visualize":0.3
+        "noise_timesteps_interval": 50,
+        "noise_rate_visualize":0.35
     }
 }
