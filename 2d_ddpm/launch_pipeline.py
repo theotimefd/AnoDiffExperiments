@@ -7,6 +7,7 @@ from train_ddpm import launch_train
 from train_ddpm_full_volume import launch_train_full_volume
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
+from compute_metrics_anomaly_detection_v2 import launch_compute_metrics_anomaly_detection_v2
 from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
 
 def main():
@@ -64,6 +65,10 @@ def main():
         if step=="compute_metrics_anomaly_detection" and rank==0:
             print("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)
+        
+        if step=="compute_metrics_anomaly_detection_v2" and rank==0:
+            print("Launching compute_metrics_anomaly_detection_v2")
+            launch_compute_metrics_anomaly_detection_v2(args)
         
         if step=="compute_metrics_thor_anomaly_detection" and rank==0:
             print("Launching compute_metrics_thor_anomaly_detection")

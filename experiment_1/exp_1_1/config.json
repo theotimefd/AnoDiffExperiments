@@ -2,7 +2,7 @@
     "experiment_name": "experiment_1",
     "sub_experiment_name": "exp_1_1",
     "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection", "compute_metrics_thor_anomaly_detection"],
+    "pipeline": ["train_ddpm_full_volume"],
     "spatial_dims": 2,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -14,6 +14,8 @@
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
+    "slice_indexes_start":22,
+    "slice_indexes_end": 94,
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
         "transforms": [
@@ -27,6 +29,9 @@
             "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
         },
         {
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+        },
+        {
             "_target_": "utils.custom_transforms.Get2DSliceFromIndexes", "axis": 2, "indexes_start": "@slice_indexes_start", "indexes_end": "@slice_indexes_end"
         },
         {
@@ -36,10 +41,7 @@
             "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
         },
         {
-            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
-        },
-        {
-            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
+            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
         },
         {
             "_target_": "monai.transforms.RandFlip", "prob": 0.5, "spatial_axis": 0
@@ -64,7 +66,7 @@
                 "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
             },
             {
-                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             {
                 "_target_": "utils.custom_transforms.SetBackgroundToZero"
@@ -120,7 +122,7 @@
                 "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
             },
             "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":550.0, "b_min":0.0, "b_max":1.0, "clip":true
+                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
             },
             "transform_9":{
                 "_target_": "custom_transforms.SetBackgroundToZero"

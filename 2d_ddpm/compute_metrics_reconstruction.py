@@ -83,7 +83,7 @@ def launch_compute_metrics_reconstruction(args):
 
     # ----------- MODEL SETTINGS -----------
 
-    test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset["name"]}/test.csv")
+    test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset['name']}/test.csv")
     test_reconstruction_images_path = []
 
     with open(test_reconstruction_csv, mode='r') as file:
@@ -405,7 +405,7 @@ def launch_compute_metrics_reconstruction(args):
         axes[5, idx].axis('off')
 
 
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction["noise_rate_max"]*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)

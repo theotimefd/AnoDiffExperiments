@@ -149,6 +149,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         test_anomaly_transforms = define_instance(args, "val_transforms")
         
         if "flair" in args.dataset["name"].lower():
+            large_group_masks = [path for path in large_group_masks if "0222_ses-0001" not in path]
             test_anomaly_large_ds = CacheDataset(data=large_group_flair_images, transform=test_anomaly_transforms)
             test_anomaly_medium_ds = CacheDataset(data=medium_group_flair_images, transform=test_anomaly_transforms)
             test_anomaly_small_ds = CacheDataset(data=small_group_flair_images, transform=test_anomaly_transforms)
@@ -349,7 +350,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         print(f"Best Number of Timesteps: {best_num_timesteps}")
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
 
-        iou_scores_df.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_scores_iou.csv")
+        iou_scores_df.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_scores_iou.csv")
     
     elif args.dataset["test"] == "isles":
         # large group
@@ -371,7 +372,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         metrics_result_text += f"Best Number of Timesteps (large group): {best_num_timesteps}\n"
         metrics_result_text += "\n"
 
-        iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_scores_iou_large_group.csv")
+        iou_scores_df_large_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_scores_iou_large_group.csv")
 
         # medium group
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute(test_anomaly_medium_loader, test_masks_medium_loader)
@@ -392,7 +393,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         metrics_result_text += f"Best Number of Timesteps (medium group): {best_num_timesteps}\n"
         metrics_result_text += "\n"
 
-        iou_scores_df_medium_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_scores_iou_medium_group.csv")
+        iou_scores_df_medium_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_scores_iou_medium_group.csv")
 
         # small group
         iou_scores_df_small_group, dice_scores_df_small_group = compute(test_anomaly_small_loader, test_masks_small_loader)
@@ -412,7 +413,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         print(f"Best Number of Timesteps (small group): {best_num_timesteps}")
         metrics_result_text += f"Best Number of Timesteps (small group): {best_num_timesteps}\n"
 
-        iou_scores_df_small_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset["test"]}_scores_iou_small_group.csv")
+        iou_scores_df_small_group.to_csv(f"{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_scores_iou_small_group.csv")
 
 
 

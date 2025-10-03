@@ -230,6 +230,9 @@ def launch_train_full_volume(args):
             #progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
 
         if rank==0:
+            print(f"epoch_loss {epoch_loss}")
+            print(f"step {step}")
+            print(f"epoch {epoch}")
             writer.add_scalar("train_loss", epoch_loss / (step + 1), epoch)
 
         if (epoch + 1) % val_interval == 0:
@@ -238,7 +241,7 @@ def launch_train_full_volume(args):
             for step, batch in enumerate(val_loader):
                 images = batch.to(device)
                 
-                images = images[..., args.dataset["slice_indexes_start"]:args.dataset["slice_indexes_end"]] # TODO determine the number of slices to validate on    
+                images = images[..., args.slice_indexes_start:args.slice_indexes_end] # TODO determine the number of slices to validate on    
                 
                 for slice_idx in range(images.shape[-1]):
 

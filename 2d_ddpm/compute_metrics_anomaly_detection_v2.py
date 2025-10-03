@@ -46,7 +46,7 @@ import lpips
 
 
 
-def launch_compute_metrics_anomaly_detection(args):
+def launch_compute_metrics_anomaly_detection_v2(args):
     # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
     # The second 50% is used to compute the final IOU and DICE metrics with these best values.
 
@@ -159,6 +159,7 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_transforms = define_instance(args, "val_transforms")
 
         if "flair" in args.dataset["name"].lower():
+            large_group_masks = [path for path in large_group_masks if "0222_ses-0001" not in path]
             test_anomaly_large_ds = CacheDataset(data=large_group_flair_images, transform=test_anomaly_transforms)
             test_anomaly_medium_ds = CacheDataset(data=medium_group_flair_images, transform=test_anomaly_transforms)
             test_anomaly_small_ds = CacheDataset(data=small_group_flair_images, transform=test_anomaly_transforms)
@@ -352,7 +353,7 @@ def launch_compute_metrics_anomaly_detection(args):
                 # Perform 3 inferences and average the results
                 infered_images = []
                 for _ in range(3):
-                    infered_images.append(my_sample(test_images, infer_scheduler, timesteps=infer_timesteps, return_intermediates=False))
+                    infered_images.append(my_sample(test_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
                 average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
         
 
@@ -455,7 +456,6 @@ def launch_compute_metrics_anomaly_detection(args):
 
         
         metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}\n"
-        metrics_result_text += "\n"
 
 
 
@@ -558,5 +558,5 @@ def launch_compute_metrics_anomaly_detection(args):
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_v2.png", transparent=False, dpi=150)
 
