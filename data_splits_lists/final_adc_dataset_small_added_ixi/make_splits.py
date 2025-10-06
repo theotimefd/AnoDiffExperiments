@@ -46,7 +46,7 @@ if EXCLUDE_FILES and os.path.exists(exclude_file_path):
     with open(exclude_file_path, "r") as csvfile:
         reader = csv.reader(csvfile)
         excluded_files = ["datasets/final_adc_dataset_small/" + row[0] for row in reader]
-#print("Excluded files:", excluded_files)
+print("Excluded files:", excluded_files)
 
 with open("train.csv", "w", newline="") as csvfile:
     writer = csv.writer(csvfile)

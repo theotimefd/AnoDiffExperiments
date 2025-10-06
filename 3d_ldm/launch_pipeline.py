@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 from train_autoencoder import launch_train_autoencoder
 from train_diffusion import launch_train_diffusion
-from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
-from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
+from compute_metrics_reconstruction_ae import launch_compute_metrics_reconstruction_ae
+from compute_metrics_anomaly_detection_ae import launch_compute_metrics_anomaly_detection_ae
+
 
 def main():
     print("start of main")
@@ -58,13 +59,14 @@ def main():
             print(f"Launching diffusion training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train_diffusion(args)
 
-        if step == "compute_metrics_reconstruction" and rank == 0:
+        if step == "compute_metrics_reconstruction_ae" and rank == 0:
             print("Launching reconstruction metrics computation")
-            launch_compute_metrics_reconstruction(args)
+            launch_compute_metrics_reconstruction_ae(args)
+
+        if step == "compute_metrics_anomaly_detection_ae" and rank == 0:
+            print("Launching anomaly detection metrics computation for autoencoder")
+            launch_compute_metrics_anomaly_detection_ae(args)
         
-        if step=="compute_metrics_anomaly_detection" and rank==0:
-            print("Launching anomaly detection metrics computation")
-            launch_compute_metrics_anomaly_detection(args)
             
     
 

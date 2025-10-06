@@ -29,7 +29,7 @@ from torch.nn import L1Loss, MSELoss
 import torch.distributed as dist
 
 import utils.custom_transforms as custom_transforms
-from utils.utils import define_instance
+from utils.utils import define_instance, visualize_one_slice_in_3d_image
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 
@@ -77,7 +77,7 @@ def launch_train_autoencoder(args):
     print(f"Using {device}")
 
     torch.backends.cudnn.benchmark = True
-    torch.set_num_threads(torch.get_num_threads())
+    torch.set_num_threads(torch.get_num_threads()) 
     torch.autograd.set_detect_anomaly(False)
 
 
@@ -155,7 +155,6 @@ def launch_train_autoencoder(args):
     trained_g_path_last = os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_autoencoder_last.pt")
     trained_d_path_last = os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_discriminator_last.pt")
 
-    inferer = DiffusionInferer(scheduler)
 
     if ddp_bool:
         # When using DDP, BatchNorm needs to be converted to SyncBatchNorm.
@@ -209,7 +208,9 @@ def launch_train_autoencoder(args):
 
     max_epochs = args.autoencoder_train["max_epochs"]
     val_interval = args.autoencoder_train["val_interval"]
-
+    autoencoder_warm_up_n_epochs = 5
+    total_step = 0
+    best_val_recon_epoch_loss = np.inf
     best_val_epoch_loss = np.inf
     best_val_epoch = 0
 
@@ -327,6 +328,3 @@ def launch_train_autoencoder(args):
                         epoch,
                     )
     
-
-if __name__ == "__main__":
-    main()

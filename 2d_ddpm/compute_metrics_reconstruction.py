@@ -47,6 +47,12 @@ from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 import lpips
 
 def launch_compute_metrics_reconstruction(args):
+    """
+    Computes reconstruction metrics on the test_reconstruction set and visualize some results
+    Works for models trained on 2D slices, either with single 2D slice validation or full volume validation
+    """
+
+
     DEVICE_TYPE = "cuda:0"
     device = torch.device(DEVICE_TYPE)
 
@@ -168,6 +174,7 @@ def launch_compute_metrics_reconstruction(args):
     # ----------- COMPUTING METRICS -----------
 
     ssim_metric = SSIMMetric(spatial_dims=2, data_range=1.0)
+    ssim_metric_3d = SSIMMetric(spatial_dims=3, data_range=1.0)
     psnr_metric = PSNRMetric(max_val=1.0)
 
     mse = {noise: [] for noise in NOISE_RANGE} # for each noise level there is a list of mse values
@@ -177,24 +184,42 @@ def launch_compute_metrics_reconstruction(args):
 
     loss_fn_lpips = lpips.LPIPS(net='alex').to(device) # Higher means further/more different. Lower means more similar.
 
+    full_volume_test = False
 
     for image_batch in tqdm(test_reconstruction_loader):
 
         test_reconstruction_images = image_batch.to(device)
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
-            # Perform 5 inferences and average the results
 
             for i, noise_timesteps in enumerate(NOISE_RANGE):
 
                 print(f"inference for {noise_timesteps} noise timesteps")
+                
+                if len(image_batch.shape)==4: # 2D slices
+                    
+                    infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
 
-                infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                    mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
+                    ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
+                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
+                    lpips_dict[noise_timesteps].append(np.mean(loss_fn_lpips.forward(infered.to(device), test_reconstruction_images).detach().cpu().numpy().flatten()))
 
-                mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
-                ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
-                psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
-                lpips_dict[noise_timesteps].append(np.mean(loss_fn_lpips.forward(infered.to(device), test_reconstruction_images).detach().cpu().numpy().flatten()))
+                elif len(image_batch.shape)==5: # full volumes
+                    full_volume_test = True
+                    infered_slices = []
+                    lpips_volume = []
+                    for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
+                        infered_slice = my_sample(test_reconstruction_images[...,slice_idx], infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                        lpips_volume.append(np.mean(loss_fn_lpips.forward(infered_slice.to(device), test_reconstruction_images[...,slice_idx]).detach().cpu().numpy().flatten())) # since lpips only works for 2D images
+                        infered_slices.append(infered_slice.unsqueeze(-1))
+
+                    infered = torch.cat(infered_slices, dim=-1)
+                    
+                    mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten())
+                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end], infered).detach().cpu().numpy().flatten()))
+                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten()))
+                    lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
@@ -204,7 +229,10 @@ def launch_compute_metrics_reconstruction(args):
     for i,(image_batch) in enumerate(test_reconstruction_loader):
         if i>0:break
 
-        test_reconstruction_images = image_batch.to(device)
+        if len(image_batch.shape)==4: # 2D slices
+            test_reconstruction_images = image_batch.to(device)
+        elif len(image_batch.shape)==5: # full volumes
+            test_reconstruction_images = image_batch[...,image_batch.shape[-1]//2].to(device) # visualize the slice in the middle of the volume
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
@@ -212,8 +240,10 @@ def launch_compute_metrics_reconstruction(args):
             first_noisy_images = intermediates[0]
 
     # ----------- PLOT -----------
-
-    metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size})\n"
+    if not full_volume_test:
+        metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size}), \n"
+    elif full_volume_test:
+        metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size}), full volume test\n"
     metric_result_text += f"Mean MSE ↓: {np.mean([np.mean(item) for sublist in mse.values() for item in sublist]):.3f}\n"
     metric_result_text += f"Mean PSNR ↑: {np.mean([np.mean(item) for sublist in psnr.values() for item in sublist]):.3f}\n"
     metric_result_text += f"Mean SSIM ↑: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"

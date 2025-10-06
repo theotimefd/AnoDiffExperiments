@@ -2,8 +2,9 @@
     "experiment_name": "experiment_1",
     "sub_experiment_name": "exp_1_1",
     "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["train_ddpm_full_volume"],
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
+    "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
