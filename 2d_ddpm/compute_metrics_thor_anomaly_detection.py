@@ -357,8 +357,8 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                         for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                             _, pseudo_anomaly_masks_processed = sample_thor(test_images[...,slice_idx], infer_scheduler=infer_scheduler, timesteps=infer_timesteps, return_intermediates=False)
                             infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-                            infered_slices.append(infered_slice.unsqueeze(-1))
-                        final_anomaly_map = torch.cat(infered_slices, dim=-1)
+                            infered_slices.append(torch.Tensor(infered_slice).unsqueeze(-1))
+                        final_anomaly_map = torch.cat(infered_slices, dim=-1).to(device)
 
                 for threshold in thresholds_to_try:
                     if args.spatial_dims_val_test==2:
@@ -433,32 +433,32 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                     for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                         _, pseudo_anomaly_masks_processed = sample_thor(test_images[...,slice_idx], infer_scheduler=infer_scheduler, timesteps=timesteps, return_intermediates=False)
                         infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-                        infered_slices.append(infered_slice.unsqueeze(-1))
-                    final_anomaly_map = torch.cat(infered_slices, dim=-1)
+                        infered_slices.append(torch.Tensor(infered_slice).unsqueeze(-1))
+                    final_anomaly_map = torch.cat(infered_slices, dim=-1).to(device)
                     
 
             if args.spatial_dims_val_test == 2:
                 ano_segmentation = torch.abs(final_anomaly_map) > threshold
 
-                iou_score = compute_iou(ano_segmentation, test_masks)
+                iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks)
                 flattened_iou_score = iou_score.cpu().numpy().flatten()
                 flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
                 iou_scores.append(flattened_iou_score)
 
-                dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
+                dice_score = dm(torch.Tensor(ano_segmentation).to(device), test_masks).cpu().numpy().flatten()
                 dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
                 dice_scores.append(dice_score)
             elif args.spatial_dims_val_test == 3:
                 ano_segmentation = torch.abs(final_anomaly_map) > threshold
 
-                iou_score = compute_iou(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
+                iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
                 flattened_iou_score = iou_score.cpu().numpy().flatten()
                 flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
                 iou_scores.append(flattened_iou_score)
 
-                dice_score = dm(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
+                dice_score = dm(torch.Tensor(ano_segmentation).to(device), test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
                 dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
                 dice_scores.append(dice_score)
 

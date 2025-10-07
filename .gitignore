@@ -57,4 +57,5 @@ cython_debug/
 *.sh
 *scores_iou.csv
 *.pth
+*.pt
 *.png

@@ -116,7 +116,7 @@ def launch_compute_metrics_reconstruction_ae(args):
         test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
     )
 
-        # Step 2: Define Autoencoder KL network and discriminator
+    # Define Autoencoder KL network
     autoencoder = define_instance(args, "autoencoder_def").to(device)
     trained_g_path = os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_autoencoder.pt")
 

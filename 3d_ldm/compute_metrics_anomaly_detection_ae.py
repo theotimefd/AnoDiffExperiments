@@ -105,7 +105,7 @@ def launch_compute_metrics_anomaly_detection_ae(args):
         test_masks = [path for path in test_masks if os.path.basename(path) not in masks_to_exclude]
         #print(test_anomaly_images)
 
-        batch_size = args.autoencoder_train["batch_size"]
+        ano_batch_size = args.autoencoder_train["batch_size"]
         num_workers = args.autoencoder_train["num_workers"]
 
         test_anomaly_transforms = define_instance(args, "val_transforms")
@@ -153,7 +153,7 @@ def launch_compute_metrics_anomaly_detection_ae(args):
         small_group_flair_images = [ROOT_DIR+"datasets/final_flair_dataset_small/isles_registered/"+filename.replace("msk", "FLAIR") for filename in small_group]
         small_group_masks = [ROOT_DIR+"datasets/final_adc_dataset_small/ISLES_masks_registered/"+filename for filename in small_group]
 
-        batch_size = args.autoencoder_train["batch_size"]
+        ano_batch_size = args.autoencoder_train["batch_size"]
         num_workers = args.autoencoder_train["num_workers"]
 
         test_anomaly_transforms = define_instance(args, "val_transforms")
@@ -190,25 +190,14 @@ def launch_compute_metrics_anomaly_detection_ae(args):
             test_anomaly_small_ds[len(test_anomaly_small_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
 
-        if args.spatial_dims_val_test == 2:
-            test_masks_transforms = transforms.Compose(
-                [
-                    transforms.LoadImage(),
-                    transforms.EnsureChannelFirst(),
-                    custom_transforms.Get2DSlice(axis=2, offset=+2),
-                    transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size)),
-                    custom_transforms.SetBackgroundToZero()
-                ]
-            )
-        elif args.spatial_dims_val_test == 3:
-            test_masks_transforms = transforms.Compose(
-                [
-                    transforms.LoadImage(),
-                    transforms.EnsureChannelFirst(),
-                    transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
-                    custom_transforms.SetBackgroundToZero()
-                ]
-            )
+        test_masks_transforms = transforms.Compose(
+            [
+                transforms.LoadImage(),
+                transforms.EnsureChannelFirst(),
+                transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                custom_transforms.SetBackgroundToZero()
+            ]
+        )
         
         test_masks_large_ds = CacheDataset(data=large_group_masks, transform=test_masks_transforms)
         test_masks_medium_ds = CacheDataset(data=medium_group_masks, transform=test_anomaly_transforms)
@@ -236,158 +225,67 @@ def launch_compute_metrics_anomaly_detection_ae(args):
             test_masks_small_ds[len(test_masks_small_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
     
-    model = define_instance(args, "network_def").to(device)
+    # Define Autoencoder KL network
+    autoencoder = define_instance(args, "autoencoder_def").to(device)
+    trained_g_path = os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_autoencoder.pt")
 
-    model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
-    model.eval()
+    autoencoder.load_state_dict(torch.load(trained_g_path, map_location=device, weights_only=True))
+    autoencoder.eval()
 
-
-    if args.noise["type"] == "simplex":
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
-
-    elif args.noise["type"] == "gaussian":
-        infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
-
-
-    @torch.no_grad()
-    def my_sample(image, infer_scheduler, timesteps, return_intermediates=False):
-        
-        simplexObj = simplex.Simplex_CLASS()
-
-        if args.noise["type"] == "simplex":
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=args.noise["normalize"]).to(device)
-        if args.noise["type"] == "gaussian":
-            noise = torch.randn(image.shape).to(device)
-        
-
-        if timesteps >= infer_scheduler.num_train_timesteps:
-            print(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)
-
-        timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
-
-        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
-
-
-        intermediates = []
-        intermediates_step = 20
-
-                
-        for t in range(timesteps, 0, -1): # va de timesteps à 0
-            
-            model_output = model(
-                image, timesteps=torch.Tensor((t,)).to(device), context=None
-            )
-            #print(model_output.shape)
-            
-            image, _ = infer_scheduler.step(model_output, t, image)
-        
-            if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
-                intermediates.append(image)
-
-        if return_intermediates:
-            return image, intermediates
-        else:
-            return image
 
 
     dm = DiceMetric(reduction="sum")
 
     def compute_select_params(image_loader, mask_loader):
+        print("Computing best threshold... (compute_select_params)")
 
-
-        num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
         thresholds_to_try = np.arange(0.0, 0.6, 0.01) # from 0.0 to 0.6 with step 0.05
 
-        iou_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
-        iou_scores_df.fillna(0.0, inplace=True)
+        iou_scores_dict = {thresh: [] for thresh in thresholds_to_try}
 
-        dice_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
-        dice_scores_df.fillna(0.0, inplace=True)
+        dice_scores_dict = {thresh: [] for thresh in thresholds_to_try}
 
 
-        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+        for i,(image_batch, mask_batch) in tqdm(enumerate(zip(image_loader, mask_loader))): 
 
             test_images = image_batch.to(device)
             test_masks = mask_batch.to(device)
             test_masks[test_masks>0.5] = 1.0
             test_masks[test_masks<=0.5] = 0.0
 
-            for infer_timesteps in num_timesteps_to_try:
-                with autocast(device_type=DEVICE_TYPE, enabled=True):
-                    if args.spatial_dims_val_test == 2: # single 2D slice segmentation
-                        # Perform 3 inferences and average the results
-                        infered_images = []
-                        for _ in range(3):
-                            infered_images.append(my_sample(test_images, infer_scheduler, timesteps=infer_timesteps, return_intermediates=False))
-                        average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
-
-                    elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
-                        infered_slices = []
-                        for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                            infered_slice = my_sample(test_images[...,slice_idx], infer_scheduler, timesteps=infer_timesteps, return_intermediates=False)
-                            infered_slices.append(infered_slice.unsqueeze(-1))
-
-                        average_infered_image = torch.cat(infered_slices, dim=-1)
-
+            with autocast(device_type=DEVICE_TYPE, enabled=True):
+                with torch.no_grad():
+                    infered, _, _ = autoencoder(test_images)
             
                 for threshold in thresholds_to_try:
+                
+                    ano_segmentation = torch.abs(infered - test_images) > threshold
 
-                    if args.spatial_dims_val_test == 2:
-                        ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+                    iou_score = compute_iou(ano_segmentation, test_masks)
+                    flattened_iou_score = iou_score.cpu().numpy().flatten()
+                    flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
-                        iou_score = compute_iou(ano_segmentation, test_masks)
-                        flattened_iou_score = iou_score.cpu().numpy().flatten()
-                        flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
+                    iou_scores_dict[threshold].append(np.sum(flattened_iou_score))
 
-                        
-                        if np.isnan(iou_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            iou_scores_df.loc[infer_timesteps, threshold] = np.sum(flattened_iou_score)
-                        else:
-                            iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) 
+                    dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
+                    dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
 
-                        dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
-                        dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-
-                        if np.isnan(dice_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            dice_scores_df.loc[infer_timesteps, threshold] = np.sum(dice_score)
-                        else:
-                            dice_scores_df.loc[infer_timesteps, threshold] += np.sum(dice_score)
-
-                    elif args.spatial_dims_val_test == 3:
-                        ano_segmentation = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end]) > threshold
-
-                        iou_score = compute_iou(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
-                        flattened_iou_score = iou_score.cpu().numpy().flatten()
-                        flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
-
-                        
-                        if np.isnan(iou_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            iou_scores_df.loc[infer_timesteps, threshold] = np.sum(flattened_iou_score)
-                        else:
-                            iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) 
-
-                        dice_score = dm(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
-                        dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-
-                        if np.isnan(dice_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            dice_scores_df.loc[infer_timesteps, threshold] = np.sum(dice_score)
-                        else:
-                            dice_scores_df.loc[infer_timesteps, threshold] += np.sum(dice_score)
+                    dice_scores_dict[threshold].append(np.sum(dice_score))
 
                     
 
-        #divide everything by the number of images
-        iou_scores_df = iou_scores_df / len(image_loader.dataset)
-        dice_scores_df = dice_scores_df / len(image_loader.dataset)
+        iou_scores_dict = {thresh: np.mean(iou_scores_dict[thresh]) for thresh in thresholds_to_try}
+        dice_scores_dict = {thresh: np.mean(dice_scores_dict[thresh]) for thresh in thresholds_to_try}
 
-        return iou_scores_df, dice_scores_df
-    
-    def compute_metrics(image_loader, mask_loader, timesteps, threshold):
+        return iou_scores_dict, dice_scores_dict
+
+    def compute_metrics(image_loader, mask_loader, threshold):
+        print("Computing final metrics... (compute_metrics)")
 
         iou_scores = []
         dice_scores = []
        
-        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+        for i,(image_batch, mask_batch) in tqdm(enumerate(zip(image_loader, mask_loader))): 
 
             test_images = image_batch.to(device)
             test_masks = mask_batch.to(device)
@@ -396,46 +294,22 @@ def launch_compute_metrics_anomaly_detection_ae(args):
 
 
             with autocast(device_type=DEVICE_TYPE, enabled=True):
-                if args.spatial_dims_val_test == 2: # single 2D slice segmentation
-                        # Perform 3 inferences and average the results
-                        infered_images = []
-                        for _ in range(3):
-                            infered_images.append(my_sample(test_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
-                        average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
 
-                elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
-                    infered_slices = []
-                    for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                        infered_slice = my_sample(test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
-                        infered_slices.append(infered_slice.unsqueeze(-1))
+                    with torch.no_grad():
+                        infered, _, _ = autoencoder(test_images)
 
-                    average_infered_image = torch.cat(infered_slices, dim=-1)
-        
+            
+            ano_segmentation = torch.abs(infered - test_images) > threshold
 
-            if args.spatial_dims_val_test == 2:
-                ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+            iou_score = compute_iou(ano_segmentation, test_masks)
+            flattened_iou_score = iou_score.cpu().numpy().flatten()
+            flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
-                iou_score = compute_iou(ano_segmentation, test_masks)
-                flattened_iou_score = iou_score.cpu().numpy().flatten()
-                flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
+            iou_scores.append(flattened_iou_score)
 
-                iou_scores.append(flattened_iou_score)
-
-                dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
-                dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-                dice_scores.append(dice_score)
-            elif args.spatial_dims_val_test == 3:
-                ano_segmentation = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end]) > threshold
-
-                iou_score = compute_iou(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
-                flattened_iou_score = iou_score.cpu().numpy().flatten()
-                flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
-
-                iou_scores.append(flattened_iou_score)
-
-                dice_score = dm(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
-                dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-                dice_scores.append(dice_score)
+            dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
+            dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
+            dice_scores.append(dice_score)
 
         mean_iou = np.mean(np.concatenate(iou_scores))
         std_iou = np.std(np.concatenate(iou_scores))
@@ -447,18 +321,15 @@ def launch_compute_metrics_anomaly_detection_ae(args):
 
     # ----------- COMPUTING METRICS -----------
 
-    if args.spatial_dims_val_test == 2:
-        metrics_result_text = "Segmentation scores (single middle 2D slice)\n"
-    elif args.spatial_dims_val_test == 3:
-        metrics_result_text = "Segmentation scores (full 3D volume slice by slice)\n"
+    metrics_result_text = "Autoencoder 3D segmentation scores\n"
 
     if args.dataset["test"] == "brats":
-        iou_scores_df, dice_scores_df = compute_select_params(test_anomaly_loader_select_params, test_masks_loader_select_params)
+        iou_scores_dict, dice_scores_dict = compute_select_params(test_anomaly_loader_select_params, test_masks_loader_select_params)
 
-        best_threshold = iou_scores_df.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df.max(axis=1).idxmax()
+        best_threshold = max(iou_scores_dict, key=iou_scores_dict.get)
+        
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_loader_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_loader_metrics, test_masks_loader_metrics, threshold=best_threshold)
 
         
         metrics_result_text += f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -466,73 +337,58 @@ def launch_compute_metrics_anomaly_detection_ae(args):
         
         metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
 
-        
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
 
         
 
     elif args.dataset["test"] == "isles":
         # large group
-        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params(test_anomaly_large_loader_select_params, test_masks_large_loader_select_params)
+        iou_scores_dict_large_group, dice_scores_dict_large_group = compute_select_params(test_anomaly_large_loader_select_params, test_masks_large_loader_select_params)
 
-        best_threshold = iou_scores_df_large_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_large_group.max(axis=1).idxmax()
+        best_threshold = max(iou_scores_dict_large_group, key=iou_scores_dict_large_group.get)
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, threshold=best_threshold)
 
-        
         metrics_result_text += f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
         metrics_result_text += f"Large group: best threshold: {best_threshold:.4f}\n"
 
-        
-        metrics_result_text += f"Large group: best number of Timesteps: {best_num_timesteps}\n"
         metrics_result_text += "\n"
 
         
 
         # medium group
-        iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params(test_anomaly_medium_loader_select_params, test_masks_medium_loader_select_params)
+        iou_scores_dict_medium_group, dice_scores_dict_medium_group = compute_select_params(test_anomaly_medium_loader_select_params, test_masks_medium_loader_select_params)
 
-        best_threshold = iou_scores_df_medium_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_medium_group.max(axis=1).idxmax()
+        best_threshold = max(iou_scores_dict_medium_group, key=iou_scores_dict_medium_group.get)
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_medium_loader_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_medium_loader_metrics, test_masks_medium_loader_metrics, threshold=best_threshold)
 
-        
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
         metrics_result_text += f"Medium group: best threshold: {best_threshold:.4f}\n"
 
-        
-        metrics_result_text += f"Medium group: best number of Timesteps: {best_num_timesteps}\n"
         metrics_result_text += "\n"
 
 
         # small group
-        iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params(test_anomaly_small_loader_select_params, test_masks_small_loader_select_params)
+        iou_scores_dict_small_group, dice_scores_dict_small_group = compute_select_params(test_anomaly_small_loader_select_params, test_masks_small_loader_select_params)
 
-        best_threshold = iou_scores_df_small_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_small_group.max(axis=1).idxmax()
+        best_threshold = max(iou_scores_dict_small_group, key=iou_scores_dict_small_group.get)
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_small_loader_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_small_loader_metrics, test_masks_small_loader_metrics, threshold=best_threshold)
 
-        
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
         metrics_result_text += f"Small group: best threshold: {best_threshold:.4f}\n"
 
-        
-        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}\n"
 
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
     #infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
-    infer_timesteps_visualize = best_num_timesteps
 
     if args.dataset["test"] == "brats":
         image_loader = test_anomaly_loader_metrics
@@ -544,23 +400,15 @@ def launch_compute_metrics_anomaly_detection_ae(args):
     for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
         if i>0:break
 
-        if args.spatial_dims_val_test == 2:
-            test_anomaly_images = image_batch.to(device)
-            test_anomaly_masks = mask_batch.to(device)
-        elif args.spatial_dims_val_test == 3:
-            test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device)
-            test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device)
-        
+        test_anomaly_images = image_batch.to(device)
+        test_anomaly_masks = mask_batch.to(device)
+
         test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
         test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
-
-            # Perform 3 inferences and average the results
-            infered_images = []
-            for _ in range(3):
-                infered_images.append(my_sample(test_anomaly_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False))
-            average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+            with torch.no_grad():
+                infered, _, _ = autoencoder(test_anomaly_images)
 
     # ----------- PLOT -----------
 
@@ -570,7 +418,7 @@ def launch_compute_metrics_anomaly_detection_ae(args):
     for idx in range(min(4, test_anomaly_images.shape[0])):
 
         # Original test_anomaly images
-        original_image = test_anomaly_images[idx, 0].cpu().numpy()
+        original_image = test_anomaly_images[idx, 0,:,:,image_batch.shape[-1]//2].cpu().numpy()
         axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
         axes[0, idx*2].set_title(f'Original {idx+1}')
         axes[0, idx*2].axis('off')
@@ -578,22 +426,20 @@ def launch_compute_metrics_anomaly_detection_ae(args):
         axes[0, idx*2+1].hist(original_image[original_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[0, idx*2+1].set_ylim(0, 2000)
         axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
-        
-        
 
         # 3x average inferred images
-        print(average_infered_image.shape)
-        average_infered_image_cpu = average_infered_image[idx, 0].cpu().numpy()
-        axes[1, idx*2].imshow(average_infered_image_cpu, cmap='gray', vmin=0, vmax=1)
+        print(infered.shape)
+        infered_cpu = infered[idx, 0,:,:,image_batch.shape[-1]//2].cpu().numpy()
+        axes[1, idx*2].imshow(infered_cpu, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(average_infered_image_cpu[average_infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(infered_cpu[infered_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # Difference images
-        difference_image = np.abs(original_image - average_infered_image_cpu)
+        difference_image = np.abs(original_image - infered_cpu)
         axes[2, idx*2].imshow(difference_image, cmap='jet', vmin=0, vmax=1)
         axes[2, idx*2].set_title(f'Difference {idx+1}')
         axes[2, idx*2].axis('off')
@@ -609,7 +455,7 @@ def launch_compute_metrics_anomaly_detection_ae(args):
         axes[3, idx*2].axis('off')
 
         # ground truth masks
-        ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
+        ground_truth_mask = test_anomaly_masks[idx, 0,:,:,image_batch.shape[-1]//2].cpu().numpy()
         axes[4, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
         axes[4, idx*2].set_title(f'Ground Truth {idx+1}')
         axes[4, idx*2].axis('off')
@@ -629,14 +475,9 @@ def launch_compute_metrics_anomaly_detection_ae(args):
     for idx in range(8):
         axes[5, idx].axis('off')
     # Add overall title with metric results
-    if args.spatial_dims_val_test == 2:
-        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
-    elif args.spatial_dims_val_test == 3:
-        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
+    plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, 3D autoencoder volume inference, large group", fontsize=16)
 
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
 
-    if args.spatial_dims_val_test == 2:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
-    if args.spatial_dims_val_test == 3:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_3D_autoencoder.png", transparent=False, dpi=150)
+   

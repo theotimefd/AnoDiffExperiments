@@ -2,13 +2,13 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_0",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_ae"],
+    "pipeline": ["compute_metrics_anomaly_detection_ae"],
     "spatial_dims": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_flair_dataset_small_added_oasis",
-        "test": "isles"
+        "test": "brats"
     },
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
