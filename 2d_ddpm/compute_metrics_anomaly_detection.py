@@ -164,7 +164,7 @@ def launch_compute_metrics_anomaly_detection(args):
         small_group_masks = [ROOT_DIR+"datasets/final_adc_dataset_small/ISLES_masks_registered/"+filename for filename in small_group]
 
         num_workers = 4
-        ano_batch_size = 32
+        ano_batch_size = 48 #TODO 32
 
         test_anomaly_transforms = define_instance(args, "val_transforms")
 
@@ -221,8 +221,8 @@ def launch_compute_metrics_anomaly_detection(args):
             )
         
         test_masks_large_ds = CacheDataset(data=large_group_masks, transform=test_masks_transforms)
-        test_masks_medium_ds = CacheDataset(data=medium_group_masks, transform=test_anomaly_transforms)
-        test_masks_small_ds = CacheDataset(data=small_group_masks, transform=test_anomaly_transforms)
+        test_masks_medium_ds = CacheDataset(data=medium_group_masks, transform=test_masks_transforms)
+        test_masks_small_ds = CacheDataset(data=small_group_masks, transform=test_masks_transforms)
 
 
         test_masks_large_loader_select_params = DataLoader(
@@ -306,7 +306,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
 
         num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-        thresholds_to_try = np.arange(0.0, 0.6, 0.01) # from 0.0 to 0.6 with step 0.05
+        thresholds_to_try = np.arange(0.0, 0.4, 0.01) # from 0.0 to 0.4 with step 0.01
 
         iou_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
         iou_scores_df.fillna(0.0, inplace=True)
@@ -478,7 +478,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
-
+        print(metrics_result_text)
         
 
     elif args.dataset["test"] == "isles":
@@ -499,7 +499,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         metrics_result_text += f"Large group: best number of Timesteps: {best_num_timesteps}\n"
         metrics_result_text += "\n"
-
+        print(metrics_result_text)
         
 
         # medium group
@@ -519,6 +519,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         metrics_result_text += f"Medium group: best number of Timesteps: {best_num_timesteps}\n"
         metrics_result_text += "\n"
+        print(metrics_result_text)
 
 
         # small group
@@ -537,6 +538,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         
         metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}\n"
+        print(metrics_result_text)
 
 
 
