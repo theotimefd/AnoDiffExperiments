@@ -477,7 +477,7 @@ def launch_compute_metrics_anomaly_detection(args):
         metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
 
         
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
         print(metrics_result_text)
         
 
@@ -537,7 +537,7 @@ def launch_compute_metrics_anomaly_detection(args):
         metrics_result_text += f"Small group: best threshold: {best_threshold:.4f}\n"
 
         
-        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}"
         print(metrics_result_text)
 
 

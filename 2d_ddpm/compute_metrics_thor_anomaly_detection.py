@@ -84,8 +84,8 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     plt.rcParams['xtick.color'] = TEXTCOLOR
     plt.rcParams['ytick.color'] = TEXTCOLOR
 
-    # ----------- MODEL SETTINGS -----------
 
+    # ----------- MODEL SETTINGS -----------
 
     if args.dataset["test"] == "brats":
         test_anomaly_images = sorted(glob.glob(ROOT_DIR+"datasets/final_flair_dataset_small/brats_registered/*.nii.gz"))[:300] #otherwise there are too many images (1200)
@@ -493,7 +493,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
 
         
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
         print(metrics_result_text)
     
     elif args.dataset["test"] == "isles":
@@ -552,7 +552,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         metrics_result_text += f"Small group: best threshold: {best_threshold:.4f}\n"
 
         
-        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}"
         print(metrics_result_text)
 
 
@@ -647,7 +647,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     elif args.spatial_dims_val_test == 3:
         plt.suptitle(f"THOR Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
 
-    plt.figtext(0.05, 0.08, metrics_result_text, fontsize=16)
+    plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
 
 
     if args.spatial_dims_val_test == 2:

@@ -129,7 +129,7 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_rate_min": 0.10,
+        "noise_rate_min": 0.05,
         "noise_rate_max": 0.30,
         "noise_timesteps_interval": 50,
         "noise_rate_visualize":0.35
