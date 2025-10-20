@@ -73,6 +73,7 @@ def main():
         if step=="compute_metrics_thor_anomaly_detection" and rank==0:
             print("Launching compute_metrics_thor_anomaly_detection")
             launch_compute_metrics_thor_anomaly_detection(args)
+        
             
     
 

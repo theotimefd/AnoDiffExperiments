@@ -61,6 +61,9 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/"
+    if args.dataset["save_anomaly_maps"]:
+        os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
     IMAGE_SIZE = args.image_size
 
@@ -244,7 +247,37 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         test_masks_small_loader_metrics = DataLoader(
             test_masks_small_ds[len(test_masks_small_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
-    
+    elif args.dataset["test"] == "soop":
+        if "flair" in args.dataset["name"].lower():
+            test_anomaly_images = sorted(glob.glob(ROOT_DIR+"datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
+        elif "adc" in args.dataset["name"].lower():
+            test_anomaly_images = sorted(glob.glob(ROOT_DIR+"datasets/final_soop_dataset_small/adc_registered/*.nii.gz"))
+
+        basic_affine = nib.load(test_anomaly_images[0]).affine
+
+        images_to_exclude = []
+        with open(ROOT_DIR+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+
+        with open(ROOT_DIR+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude_non_axial_thick_slices.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+        
+
+        test_anomaly_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude]
+        
+        
+        num_workers = 4
+        ano_batch_size = 64
+
+        test_anomaly_transforms = define_instance(args, "val_transforms")
+        test_anomaly_ds = CacheDataset(data=test_anomaly_images, transform=test_anomaly_transforms)
+
+        test_anomaly_loader_metrics = DataLoader(
+            test_anomaly_ds, batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+        )
+
     model = define_instance(args, "network_def").to(device)
 
     model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
@@ -416,6 +449,11 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         iou_scores = []
         dice_scores = []
 
+        no_masks = False
+        if mask_loader is None:
+            mask_loader = image_loader # hack so the for loop works
+            no_masks = True
+
         for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
 
             test_images = image_batch.to(device)
@@ -427,17 +465,33 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                 if args.spatial_dims_val_test == 2: # single 2D slice segmentation
                     _, pseudo_anomaly_masks_processed = sample_thor(test_images, infer_scheduler=infer_scheduler, timesteps=timesteps, return_intermediates=False)
                     final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-                
+                    if args.dataset["save_anomaly_maps"]:
+                        for idx_in_batch in range(final_anomaly_map.shape[0]):
+                            #save as png
+                            image_id= i*image_batch.shape[0] + idx_in_batch
+                            image_name = os.path.basename(test_anomaly_images[image_id])
+                            plt.imsave(ANOMALY_MAPS_DIR+f"ano_map_thor_{image_name.split('.')[0]}.png", final_anomaly_map[idx_in_batch].cpu().numpy(), vmin=0, vmax=1, cmap='jet')
+
+
                 elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
                     infered_slices = []
                     for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                         _, pseudo_anomaly_masks_processed = sample_thor(test_images[...,slice_idx], infer_scheduler=infer_scheduler, timesteps=timesteps, return_intermediates=False)
                         infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
                         infered_slices.append(torch.Tensor(infered_slice).unsqueeze(-1))
-                    final_anomaly_map = torch.cat(infered_slices, dim=-1).to(device)
-                    
 
-            if args.spatial_dims_val_test == 2:
+                    stacked_anomaly_maps = torch.cat(infered_slices, dim=-1).to(device)
+                    final_anomaly_map = torch.zeros_like(test_images)
+                    final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = stacked_anomaly_maps
+                    
+                    if args.dataset["save_anomaly_maps"]:
+                        for idx_in_batch in range(final_anomaly_map.shape[0]):
+                            image_id= i*image_batch.shape[0] + idx_in_batch
+                            image_name = os.path.basename(test_anomaly_images[image_id])
+                            nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_thor_{image_name}")
+
+
+            if args.spatial_dims_val_test == 2 and not no_masks:
                 ano_segmentation = torch.abs(final_anomaly_map) > threshold
 
                 iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks)
@@ -449,7 +503,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                 dice_score = dm(torch.Tensor(ano_segmentation).to(device), test_masks).cpu().numpy().flatten()
                 dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
                 dice_scores.append(dice_score)
-            elif args.spatial_dims_val_test == 3:
+            elif args.spatial_dims_val_test == 3 and not no_masks:
                 ano_segmentation = torch.abs(final_anomaly_map) > threshold
 
                 iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
@@ -462,6 +516,8 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                 dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
                 dice_scores.append(dice_score)
 
+        if no_masks:
+            return
 
         mean_iou = np.mean(np.concatenate(iou_scores))
         std_iou = np.std(np.concatenate(iou_scores))
@@ -555,103 +611,112 @@ def launch_compute_metrics_thor_anomaly_detection(args):
         metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}"
         print(metrics_result_text)
 
+    elif args.dataset["test"] == "soop":
+        if "flair" in args.dataset["name"].lower():
+            num_timesteps = 350 
+            compute_metrics(test_anomaly_loader_metrics, None, timesteps=num_timesteps, threshold=None)
+        elif "adc" in args.dataset["name"].lower():
+            num_timesteps = 100
+            compute_metrics(test_anomaly_loader_metrics, None, timesteps=num_timesteps, threshold=None)
 
 
 
 
-    # ----------- VISUALIZATION OF A BATCH -----------
-    infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+    # ----------- SUMMARY FIGURE -----------
+    
+    if args.show_summary_figure:
+        infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
-    if args.dataset["test"] == "brats":
-        image_loader = test_anomaly_loader_metrics
-        mask_loader = test_masks_loader_metrics
-    elif args.dataset["test"] == "isles":
-        image_loader = test_anomaly_large_loader_metrics
-        mask_loader = test_masks_large_loader_metrics
+        if args.dataset["test"] == "brats":
+            image_loader = test_anomaly_loader_metrics
+            mask_loader = test_masks_loader_metrics
+        elif args.dataset["test"] == "isles":
+            image_loader = test_anomaly_large_loader_metrics
+            mask_loader = test_masks_large_loader_metrics
 
-    for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
-        if i>0:break
+        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+            if i>0:break
+
+            if args.spatial_dims_val_test == 2:
+                test_anomaly_images = image_batch.to(device)
+                test_anomaly_masks = mask_batch.to(device)
+            elif args.spatial_dims_val_test == 3:
+                test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device)
+                test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device)
+            
+            test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
+            test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
+
+            with autocast(device_type=DEVICE_TYPE, enabled=True):
+
+                _, pseudo_anomaly_masks_processed = sample_thor(test_anomaly_images, infer_scheduler=infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False)
+                final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
+
+        # ----------- PLOT -----------
+        
+        fig, axes = plt.subplots(5, 8, figsize=(20, 17), constrained_layout=True)
+        plt.tight_layout()
+
+        for idx in range(min(4, test_anomaly_images.shape[0])):
+
+            # Original test_anomaly images
+            original_image = test_anomaly_images[idx, 0].cpu().numpy()
+            axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
+            axes[0, idx*2].set_title(f'Original {idx+1}')
+            axes[0, idx*2].axis('off')
+
+            axes[0, idx*2+1].hist(original_image[original_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[0, idx*2+1].set_ylim(0, 2000)
+            axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+            
+            
+            # inferred ano map
+            #print(average_infered_image.shape)
+            axes[1, idx*2].imshow(final_anomaly_map[idx][0], cmap='jet', vmin=0, vmax=1)
+            axes[1, idx*2].set_title(f'Inferred {idx+1}')
+            axes[1, idx*2].axis('off')
+
+            axes[1, idx*2+1].hist(final_anomaly_map[idx][0][final_anomaly_map[idx][0]>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[1, idx*2+1].set_ylim(0, 2000)
+            axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+            # Thresholded difference images
+            thresholded_difference_image = (final_anomaly_map[idx][0] > best_threshold).astype(np.float32)
+            axes[2, idx*2].imshow(thresholded_difference_image, cmap='gray', vmin=0, vmax=1)
+            axes[2, idx*2].set_title(f'Thresholded anomaly map {idx+1}')
+            axes[2, idx*2].axis('off')
+
+            # ground truth masks
+            ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
+            axes[3, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
+            axes[3, idx*2].set_title(f'Ground Truth {idx+1}')
+            axes[3, idx*2].axis('off')
+
+            axes[3, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[3, idx*2+1].set_ylim(0, 2000)
+            axes[3, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+            axes[0, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+            axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+            axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+            axes[3, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+
+        
+        # Add an empty row to create more whitespace for the figtext
+        for idx in range(8):
+            axes[4, idx].axis('off')
+
+        # Add overall title with metric results
+        if args.spatial_dims_val_test == 2:
+            plt.suptitle(f"THOR Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
+        elif args.spatial_dims_val_test == 3:
+            plt.suptitle(f"THOR Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
+
+        plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
+
 
         if args.spatial_dims_val_test == 2:
-            test_anomaly_images = image_batch.to(device)
-            test_anomaly_masks = mask_batch.to(device)
-        elif args.spatial_dims_val_test == 3:
-            test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device)
-            test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device)
-        
-        test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
-        test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
-
-        with autocast(device_type=DEVICE_TYPE, enabled=True):
-
-            _, pseudo_anomaly_masks_processed = sample_thor(test_anomaly_images, infer_scheduler=infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False)
-            final_anomaly_map = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-
-    # ----------- PLOT -----------
-
-    fig, axes = plt.subplots(5, 8, figsize=(20, 17), constrained_layout=True)
-    plt.tight_layout()
-
-    for idx in range(min(4, test_anomaly_images.shape[0])):
-
-        # Original test_anomaly images
-        original_image = test_anomaly_images[idx, 0].cpu().numpy()
-        axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
-        axes[0, idx*2].set_title(f'Original {idx+1}')
-        axes[0, idx*2].axis('off')
-
-        axes[0, idx*2+1].hist(original_image[original_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[0, idx*2+1].set_ylim(0, 2000)
-        axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
-        
-        
-        # inferred ano map
-        #print(average_infered_image.shape)
-        axes[1, idx*2].imshow(final_anomaly_map[idx][0], cmap='jet', vmin=0, vmax=1)
-        axes[1, idx*2].set_title(f'Inferred {idx+1}')
-        axes[1, idx*2].axis('off')
-
-        axes[1, idx*2+1].hist(final_anomaly_map[idx][0][final_anomaly_map[idx][0]>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[1, idx*2+1].set_ylim(0, 2000)
-        axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
-
-        # Thresholded difference images
-        thresholded_difference_image = (final_anomaly_map[idx][0] > best_threshold).astype(np.float32)
-        axes[2, idx*2].imshow(thresholded_difference_image, cmap='gray', vmin=0, vmax=1)
-        axes[2, idx*2].set_title(f'Thresholded anomaly map {idx+1}')
-        axes[2, idx*2].axis('off')
-
-        # ground truth masks
-        ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
-        axes[3, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
-        axes[3, idx*2].set_title(f'Ground Truth {idx+1}')
-        axes[3, idx*2].axis('off')
-
-        axes[3, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[3, idx*2+1].set_ylim(0, 2000)
-        axes[3, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
-
-        axes[0, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[3, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-
-    
-    # Add an empty row to create more whitespace for the figtext
-    for idx in range(8):
-        axes[4, idx].axis('off')
-
-    # Add overall title with metric results
-    if args.spatial_dims_val_test == 2:
-        plt.suptitle(f"THOR Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
-    elif args.spatial_dims_val_test == 3:
-        plt.suptitle(f"THOR Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
-
-    plt.figtext(0.0, 0.0, metrics_result_text, fontsize=16)
-
-
-    if args.spatial_dims_val_test == 2:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_thor_anomaly_detection_single_slice.png", transparent=False, dpi=150)
-    if args.spatial_dims_val_test == 3:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_thor_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
+            plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_thor_anomaly_detection_single_slice.png", transparent=False, dpi=150)
+        if args.spatial_dims_val_test == 3:
+            plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_thor_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
 
