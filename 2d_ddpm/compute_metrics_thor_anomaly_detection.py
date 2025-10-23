@@ -46,7 +46,17 @@ from monai.metrics import compute_iou, DiceMetric
 from scipy import stats
 import copy
 
+def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
+    # to be used only on mri images with intensities between 0 and 1
+    input_np = input_image.cpu().numpy()
 
+    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
+
+    peak_value = bin_edges[np.argmax(hist)]
+
+    normalized_image = input_image / peak_value * target_value
+
+    return normalized_image
 
 def launch_compute_metrics_thor_anomaly_detection(args):
     DEVICE_TYPE = "cuda:0"
@@ -335,7 +345,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                 pseudo_anomaly_mask = pseudo_anomaly_mask.cpu().detach().numpy()
                 
 
-                pseudo_anomaly_mask_processed = torch.Tensor(thor_ddpm.get_region_anomaly_mask(pseudo_anomaly_mask, kernel_size=6)).to(device).clip(0,1) # simple erosion dilation 
+                pseudo_anomaly_mask_processed = torch.Tensor(thor_ddpm.get_region_anomaly_mask(pseudo_anomaly_mask, kernel_size=4)).to(device).clip(0,1) # simple erosion dilation 
                 
 
                 pseudo_anomaly_mask_processed = pseudo_anomaly_mask_processed.clip(0,1) 
@@ -343,10 +353,13 @@ def launch_compute_metrics_thor_anomaly_detection(args):
                 intermediates_pseudo_anomaly_masks_processed.append(pseudo_anomaly_mask_processed)
 
                 image_0 = pseudo_anomaly_mask_processed * image_before_step + (1-pseudo_anomaly_mask_processed) * original_image
-            
+
                 image_0 = torch.clamp(image_0, 0, 1)
                 
-                
+                image_0 = scale_intensity_from_histogram_peak(image_0, 2.0/7.0) #TODO
+
+                image_0 = torch.clamp(image_0, 0, 1)
+
                 image = infer_scheduler.add_noise(image_0, noise, torch.Tensor((t,)).to(device).long())
                 
                 intermediates_mixed_images_visualize.append(image)

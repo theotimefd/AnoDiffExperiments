@@ -151,9 +151,10 @@ class ScaleIntensityFromHistogramPeak(transforms.Transform):
         keys (str or list): Keys of the dictionary to apply the transform to.
         target_value (float): target value for the peak of the histogram.
     """
-    def __init__(self, target_value: int = 0):
+    def __init__(self, target_value: int = 0, bins: int = 100):
         super().__init__()
         self.target_value = target_value
+        self.bins = bins
 
     def __call__(self, data):
         
@@ -162,7 +163,7 @@ class ScaleIntensityFromHistogramPeak(transforms.Transform):
         data_np = data.cpu().numpy() if is_tensor else data
 
         # Compute the histogram of the image slice
-        hist, bins = np.histogram(data_np.flatten(), bins=100, range=(np.max(data_np)/15.0, np.max(data_np)))
+        hist, bins = np.histogram(data_np.flatten(), bins=self.bins, range=(np.max(data_np)/15.0, np.max(data_np)))
 
         # Find the value corresponding to the maximum of the histogram
         most_occurred_pixel_value = bins[np.argmax(hist)]

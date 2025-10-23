@@ -44,7 +44,17 @@ from monai.metrics import compute_iou, DiceMetric
 
 import lpips
 
+def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
+    # to be used only on mri images with intensities between 0 and 1
+    input_np = input_image.cpu().numpy()
 
+    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
+
+    peak_value = bin_edges[np.argmax(hist)]
+
+    normalized_image = input_image / peak_value * target_value
+
+    return normalized_image
 
 def launch_compute_metrics_anomaly_detection(args):
     # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
@@ -330,6 +340,7 @@ def launch_compute_metrics_anomaly_detection(args):
                         for _ in range(3):
                             infered_images.append(my_sample(test_images, infer_scheduler, timesteps=infer_timesteps, return_intermediates=False))
                         average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+                        average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
                     elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
                         infered_slices = []
@@ -338,6 +349,7 @@ def launch_compute_metrics_anomaly_detection(args):
                             infered_slices.append(infered_slice.unsqueeze(-1))
 
                         average_infered_image = torch.cat(infered_slices, dim=-1)
+                        average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
             
                 for threshold in thresholds_to_try:
@@ -412,6 +424,7 @@ def launch_compute_metrics_anomaly_detection(args):
                         for _ in range(3):
                             infered_images.append(my_sample(test_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
                         average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+                        average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
                 elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
                     infered_slices = []
@@ -420,6 +433,7 @@ def launch_compute_metrics_anomaly_detection(args):
                         infered_slices.append(infered_slice.unsqueeze(-1))
 
                     average_infered_image = torch.cat(infered_slices, dim=-1)
+                    average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
         
 
             if args.spatial_dims_val_test == 2:
@@ -573,6 +587,7 @@ def launch_compute_metrics_anomaly_detection(args):
             for _ in range(3):
                 infered_images.append(my_sample(test_anomaly_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False))
             average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+            average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
     # ----------- PLOT -----------
 
@@ -596,6 +611,7 @@ def launch_compute_metrics_anomaly_detection(args):
         # 3x average inferred images
         print(average_infered_image.shape)
         average_infered_image_cpu = average_infered_image[idx, 0].cpu().numpy()
+        
         axes[1, idx*2].imshow(average_infered_image_cpu, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
