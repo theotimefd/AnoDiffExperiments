@@ -519,13 +519,13 @@ def launch_compute_metrics_thor_anomaly_detection(args):
             elif args.spatial_dims_val_test == 3 and not no_masks:
                 ano_segmentation = torch.abs(final_anomaly_map) > threshold
 
-                iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
+                iou_score = compute_iou(torch.Tensor(ano_segmentation).to(device), test_masks)
                 flattened_iou_score = iou_score.cpu().numpy().flatten()
                 flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
                 iou_scores.append(flattened_iou_score)
 
-                dice_score = dm(torch.Tensor(ano_segmentation).to(device), test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
+                dice_score = dm(torch.Tensor(ano_segmentation).to(device), test_masks).cpu().numpy().flatten()
                 dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
                 dice_scores.append(dice_score)
 
@@ -638,7 +638,9 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     # ----------- SUMMARY FIGURE -----------
     
     if args.show_summary_figure:
-        infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+        #infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+        infer_timesteps_visualize = best_num_timesteps
+
 
         if args.dataset["test"] == "brats":
             image_loader = test_anomaly_loader_metrics

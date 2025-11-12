@@ -1,3 +1,9 @@
+"""
+This file is similar to compute_metrics_anomaly_detection.py but tests for
+multiple post-processing parameters to find the best combination
+
+https://stackoverflow.com/questions/36760414/how-to-create-pandas-dataframes-with-more-than-2-dimensions
+"""
 import os
 import time
 import glob
@@ -42,6 +48,12 @@ import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import define_instance
 
 from monai.metrics import compute_iou, DiceMetric
+
+
+from scipy.ndimage import median_filter
+from scipy.ndimage import binary_erosion
+from scipy.ndimage import binary_dilation
+from scipy.ndimage import label
 
 import lpips
 
@@ -259,7 +271,7 @@ def launch_compute_metrics_anomaly_detection(args):
         test_masks_small_loader_metrics = DataLoader(
             test_masks_small_ds[len(test_masks_small_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
-    elif args.dataset["test"] == "soop":
+    elif args.dataset["test"] == "soop": 
         if "flair" in args.dataset["name"].lower():
             test_anomaly_images = sorted(glob.glob(ROOT_DIR+"datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
         elif "adc" in args.dataset["name"].lower():
@@ -278,6 +290,9 @@ def launch_compute_metrics_anomaly_detection(args):
         
 
         test_anomaly_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude]
+
+        tests_anomaly_masks = glob.glob(ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/*.nii.gz")
+        test_anomaly_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('_')[0] in os.path.basename(ano_image).split('_')[0] for ano_image in test_anomaly_images]
         
         
         num_workers = 4
@@ -286,8 +301,38 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_transforms = define_instance(args, "val_transforms")
         test_anomaly_ds = CacheDataset(data=test_anomaly_images, transform=test_anomaly_transforms)
 
+        test_anomaly_loader_select_params = DataLoader(
+            test_anomaly_ds[:len(test_anomaly_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+        )
         test_anomaly_loader_metrics = DataLoader(
-            test_anomaly_ds, batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            test_anomaly_ds[len(test_anomaly_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+        )
+
+        if args.spatial_dims_val_test == 2:
+            test_masks_transforms = transforms.Compose(
+                [
+                    transforms.LoadImage(),
+                    transforms.EnsureChannelFirst(),
+                    custom_transforms.Get2DSlice(axis=2, offset=+2),
+                    transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size)),
+                    custom_transforms.SetBackgroundToZero()
+                ]
+            )
+        elif args.spatial_dims_val_test == 3:
+            test_masks_transforms = transforms.Compose(
+                [
+                    transforms.LoadImage(),
+                    transforms.EnsureChannelFirst(),
+                    transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                    custom_transforms.SetBackgroundToZero()
+                ]
+            )
+        test_anomaly_masks_ds = CacheDataset(data=test_anomaly_masks, transform=test_masks_transforms)
+        test_anomaly_masks_loader_select_params = DataLoader(
+            test_anomaly_masks_ds[:len(test_anomaly_masks_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+        )
+        test_anomaly_masks_loader_metrics = DataLoader(
+            test_anomaly_masks_ds[len(test_anomaly_masks_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
 
     model = define_instance(args, "network_def").to(device)
@@ -351,11 +396,18 @@ def launch_compute_metrics_anomaly_detection(args):
 
         num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
         thresholds_to_try = np.arange(0.0, 0.4, 0.01) # from 0.0 to 0.4 with step 0.01
+        median_filter_sizes_to_try = [-1, 3, 5, 10] # -1 means no median filter
+        erosion_iterations_to_try = [0, 1, 2]
+        dilation_iterations_to_try = [0, 1, 2]
 
-        iou_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
+
+        # Create the MultiIndex from timesteps, thresholds, median filter sizes, erosion and dilation iterations
+        iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_iterations_to_try, dilation_iterations_to_try])
+        iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
         iou_scores_df.fillna(0.0, inplace=True)
 
-        dice_scores_df = pd.DataFrame(index=num_timesteps_to_try, columns=thresholds_to_try)
+        dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_iterations_to_try, dilation_iterations_to_try])
+        dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
         dice_scores_df.fillna(0.0, inplace=True)
 
 
@@ -366,6 +418,7 @@ def launch_compute_metrics_anomaly_detection(args):
             test_masks[test_masks>0.5] = 1.0
             test_masks[test_masks<=0.5] = 0.0
 
+            # infer timesteps
             for infer_timesteps in num_timesteps_to_try:
                 with autocast(device_type=DEVICE_TYPE, enabled=True):
                     if args.spatial_dims_val_test == 2: # single 2D slice segmentation
@@ -385,50 +438,104 @@ def launch_compute_metrics_anomaly_detection(args):
                         average_infered_image = torch.cat(infered_slices, dim=-1)
                         average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
-            
-                for threshold in thresholds_to_try:
+                # median filter sizes
+                for median_filter_size in median_filter_sizes_to_try:
+                    # thresholds
+                    for threshold in thresholds_to_try:
+                        # erosion iterations
+                        for erosion_iterations in erosion_iterations_to_try:
+                            # dilation iterations
+                            for dilation_iterations in dilation_iterations_to_try:
+                                if args.spatial_dims_val_test == 2:
+                                    
+                                    final_anomaly_map = torch.abs(average_infered_image - test_images)
 
-                    if args.spatial_dims_val_test == 2:
-                        ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+                                    # apply median filter if specified
+                                    if median_filter_size is not None and median_filter_size > 0:
+                                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                                        for b in range(final_anomaly_map_np.shape[0]):
+                                            final_anomaly_map_np[b,0] = median_filter(final_anomaly_map_np[b,0], size=median_filter_size)
+                                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+                                    
+                                    ano_segmentation = final_anomaly_map > threshold
 
-                        iou_score = compute_iou(ano_segmentation, test_masks)
-                        flattened_iou_score = iou_score.cpu().numpy().flatten()
-                        flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
+                                    # apply erosion if specified
+                                    if erosion_iterations > 0:
+                                        ano_segmentation_np = ano_segmentation.cpu().numpy()
+                                        for b in range(ano_segmentation_np.shape[0]):
+                                            ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=erosion_iterations)
+                                        ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+                                    
+                                    # apply dilation if specified
+                                    if dilation_iterations > 0:
+                                        ano_segmentation_np = ano_segmentation.cpu().numpy()
+                                        for b in range(ano_segmentation_np.shape[0]):
+                                            ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=dilation_iterations)
+                                        ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
 
-                        
-                        if np.isnan(iou_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            iou_scores_df.loc[infer_timesteps, threshold] = np.sum(flattened_iou_score)
-                        else:
-                            iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) 
+                                    
+                                    iou_score = compute_iou(ano_segmentation, test_masks)
+                                    flattened_iou_score = iou_score.cpu().numpy().flatten()
+                                    flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
 
-                        dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
-                        dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
+                                    
+                                    if np.isnan(iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"]): # if the cell is empty
+                                        iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"] = np.sum(flattened_iou_score)
+                                    else:
+                                        iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"] += np.sum(flattened_iou_score)
 
-                        if np.isnan(dice_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            dice_scores_df.loc[infer_timesteps, threshold] = np.sum(dice_score)
-                        else:
-                            dice_scores_df.loc[infer_timesteps, threshold] += np.sum(dice_score)
+                                    dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
+                                    dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
 
-                    elif args.spatial_dims_val_test == 3:
-                        ano_segmentation = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end]) > threshold
+                                    if np.isnan(dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"]): # if the cell is empty
+                                        dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"] = np.sum(dice_score)
+                                    else:
+                                        dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"] += np.sum(dice_score)
 
-                        iou_score = compute_iou(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
-                        flattened_iou_score = iou_score.cpu().numpy().flatten()
-                        flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
+                                elif args.spatial_dims_val_test == 3:
 
-                        
-                        if np.isnan(iou_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            iou_scores_df.loc[infer_timesteps, threshold] = np.sum(flattened_iou_score)
-                        else:
-                            iou_scores_df.loc[infer_timesteps, threshold] += np.sum(flattened_iou_score) 
+                                    final_anomaly_map = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
 
-                        dice_score = dm(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
-                        dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
+                                    # apply median filter if specified
+                                    if median_filter_size is not None and median_filter_size > 0:
+                                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                                        for b in range(final_anomaly_map_np.shape[0]):
+                                            final_anomaly_map_np[b,0] = median_filter(final_anomaly_map_np[b,0], size=median_filter_size)
+                                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
 
-                        if np.isnan(dice_scores_df.loc[infer_timesteps, threshold]): # if the cell is empty
-                            dice_scores_df.loc[infer_timesteps, threshold] = np.sum(dice_score)
-                        else:
-                            dice_scores_df.loc[infer_timesteps, threshold] += np.sum(dice_score)
+                                    ano_segmentation = final_anomaly_map > threshold
+
+                                    # apply erosion if specified
+                                    if erosion_iterations > 0:
+                                        ano_segmentation_np = ano_segmentation.cpu().numpy()
+                                        for b in range(ano_segmentation_np.shape[0]):
+                                            ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=erosion_iterations)
+                                        ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+                                    
+                                    # apply dilation if specified
+                                    if dilation_iterations > 0:
+                                        ano_segmentation_np = ano_segmentation.cpu().numpy()
+                                        for b in range(ano_segmentation_np.shape[0]):
+                                            ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=dilation_iterations)
+                                        ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+
+                                    iou_score = compute_iou(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end])
+                                    flattened_iou_score = iou_score.cpu().numpy().flatten()
+                                    flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
+
+                                    
+                                    if np.isnan(iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"]): # if the cell is empty
+                                        iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"] = np.sum(flattened_iou_score)
+                                    else:
+                                        iou_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "IOU"] += np.sum(flattened_iou_score)
+
+                                    dice_score = dm(ano_segmentation, test_masks[...,args.slice_indexes_start:args.slice_indexes_end]).cpu().numpy().flatten()
+                                    dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
+
+                                    if np.isnan(dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"]): # if the cell is empty
+                                        dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"] = np.sum(dice_score)
+                                    else:
+                                        dice_scores_df.loc[(infer_timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations), "DICE"] += np.sum(dice_score)
 
                     
 
@@ -438,8 +545,22 @@ def launch_compute_metrics_anomaly_detection(args):
 
         return iou_scores_df, dice_scores_df
     
-    def compute_metrics(image_loader, mask_loader, timesteps, threshold):
-
+    def compute_metrics(image_loader, mask_loader, timesteps, threshold, median_filter_size, erosion_iterations, dilation_iterations):
+        """
+        input:
+            image_loader: DataLoader for the anomaly images
+            mask_loader: DataLoader for the anomaly masks
+            timesteps: number of noise timesteps to use for inference
+            threshold: threshold to use for anomaly segmentation
+            median_filter_size: size of the median filter to apply to the anomaly map, use -1 or None to not apply any filtering
+            erosion_iterations: number of erosion iterations to apply to the anomaly segmentation, use 0 to not apply any erosion
+            dilation_iterations: number of dilation iterations to apply to the anomaly segmentation, use 0 to not apply any dilation
+        output:
+            mean_iou: mean IOU score
+            std_iou: std IOU score
+            mean_dice: mean DICE score
+            std_dice: std DICE score
+        """
         iou_scores = []
         dice_scores = []
 
@@ -448,7 +569,7 @@ def launch_compute_metrics_anomaly_detection(args):
             mask_loader = image_loader # hack so the for loop works
             no_masks = True
 
-       
+       # for every batch
         for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
 
             test_images = image_batch.to(device)
@@ -466,6 +587,14 @@ def launch_compute_metrics_anomaly_detection(args):
                     average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
                     average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
                     final_anomaly_map = torch.abs(average_infered_image - test_images)
+
+                    # apply median filter if specified
+                    if median_filter_size is not None and median_filter_size > 0:
+                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                        for b in range(final_anomaly_map_np.shape[0]):
+                            final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+
                     if args.dataset["save_anomaly_maps"]:
                         for idx_in_batch in range(final_anomaly_map.shape[0]):
                             #save as png
@@ -476,18 +605,30 @@ def launch_compute_metrics_anomaly_detection(args):
 
                 elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
                     infered_slices = []
+
+                    # infer slice by slice
                     for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                         infered_slice = my_sample(test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
                         infered_slices.append(infered_slice.unsqueeze(-1))
 
+                    # stack the slices back to a 3D volume
                     average_infered_image = torch.cat(infered_slices, dim=-1)
                     average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
-                        
+    
+                    # make the anomaly map (difference between infered and original)
                     final_anomaly_map = torch.zeros_like(test_images)
                     final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
+
+                    # apply median filter if specified
+                    if median_filter_size is not None and median_filter_size > 0:
+                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                        for b in range(final_anomaly_map_np.shape[0]):
+                            final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+                    
                     if args.dataset["save_anomaly_maps"]:
                         for idx_in_batch in range(final_anomaly_map.shape[0]):
-                            image_id= i*test_images.shape[0] + idx_in_batch
+                            image_id = i*test_images.shape[0] + idx_in_batch
                             image_name = os.path.basename(test_anomaly_images[image_id])
                             nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
 
@@ -495,6 +636,20 @@ def launch_compute_metrics_anomaly_detection(args):
             if args.spatial_dims_val_test == 2 and not no_masks:
                 
                 ano_segmentation = torch.abs(average_infered_image - test_images) > threshold
+
+                # perform erosion if specified
+                if erosion_iterations > 0:
+                    ano_segmentation_np = ano_segmentation.cpu().numpy()
+                    for b in range(ano_segmentation_np.shape[0]):
+                        ano_segmentation_np[b] = binary_erosion(ano_segmentation_np[b], iterations=erosion_iterations).astype(ano_segmentation_np.dtype)
+                    ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+                
+                # perform dilation if specified
+                if dilation_iterations > 0:
+                    ano_segmentation_np = ano_segmentation.cpu().numpy()
+                    for b in range(ano_segmentation_np.shape[0]):
+                        ano_segmentation_np[b] = binary_dilation(ano_segmentation_np[b], iterations=dilation_iterations).astype(ano_segmentation_np.dtype)
+                    ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
 
                 iou_score = compute_iou(ano_segmentation, test_masks)
                 flattened_iou_score = iou_score.cpu().numpy().flatten()
@@ -508,7 +663,22 @@ def launch_compute_metrics_anomaly_detection(args):
 
             elif args.spatial_dims_val_test == 3 and not no_masks:
 
+                # make the segmentation map with threshold
                 ano_segmentation = final_anomaly_map > threshold
+
+                # perform erosion if specified
+                if erosion_iterations > 0:
+                    ano_segmentation_np = ano_segmentation.cpu().numpy()
+                    for b in range(ano_segmentation_np.shape[0]):
+                        ano_segmentation_np[b] = binary_erosion(ano_segmentation_np[b], iterations=erosion_iterations).astype(ano_segmentation_np.dtype)
+                    ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+                
+                # perform dilation if specified
+                if dilation_iterations > 0:
+                    ano_segmentation_np = ano_segmentation.cpu().numpy()
+                    for b in range(ano_segmentation_np.shape[0]):
+                        ano_segmentation_np[b] = binary_dilation(ano_segmentation_np[b], iterations=dilation_iterations).astype(ano_segmentation_np.dtype)
+                    ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
 
                 iou_score = compute_iou(ano_segmentation, test_masks)
                 flattened_iou_score = iou_score.cpu().numpy().flatten()
@@ -541,19 +711,22 @@ def launch_compute_metrics_anomaly_detection(args):
     if args.dataset["test"] == "brats":
         iou_scores_df, dice_scores_df = compute_select_params(test_anomaly_loader_select_params, test_masks_loader_select_params)
 
-        best_threshold = iou_scores_df.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df.max(axis=1).idxmax()
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_iterations, best_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_loader_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_loader_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_iterations=best_erosion_iterations, dilation_iterations=best_dilation_iterations)
 
         
         metrics_result_text += f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
-
-        
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Iterations: {best_erosion_iterations}\n"
+        metrics_result_text += f"Best Dilation Iterations: {best_dilation_iterations}\n"
+        
         print(metrics_result_text)
         
 
@@ -561,19 +734,20 @@ def launch_compute_metrics_anomaly_detection(args):
         # large group
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params(test_anomaly_large_loader_select_params, test_masks_large_loader_select_params)
 
-        best_threshold = iou_scores_df_large_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_large_group.max(axis=1).idxmax()
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_large_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_iterations, best_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_iterations=best_erosion_iterations, dilation_iterations=best_dilation_iterations)
 
         
         metrics_result_text += f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
-        
-        metrics_result_text += f"Large group: best threshold: {best_threshold:.4f}\n"
-
-        
-        metrics_result_text += f"Large group: best number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Iterations: {best_erosion_iterations}\n"
+        metrics_result_text += f"Best Dilation Iterations: {best_dilation_iterations}\n"
         metrics_result_text += "\n"
         print(metrics_result_text)
         
@@ -581,19 +755,20 @@ def launch_compute_metrics_anomaly_detection(args):
         # medium group
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params(test_anomaly_medium_loader_select_params, test_masks_medium_loader_select_params)
 
-        best_threshold = iou_scores_df_medium_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_medium_group.max(axis=1).idxmax()
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_medium_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_iterations, best_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_medium_loader_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_medium_loader_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_iterations=best_erosion_iterations, dilation_iterations=best_dilation_iterations)
 
         
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
-        
-        metrics_result_text += f"Medium group: best threshold: {best_threshold:.4f}\n"
-
-        
-        metrics_result_text += f"Medium group: best number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Iterations: {best_erosion_iterations}\n"
+        metrics_result_text += f"Best Dilation Iterations: {best_dilation_iterations}\n"
         metrics_result_text += "\n"
         print(metrics_result_text)
 
@@ -601,27 +776,45 @@ def launch_compute_metrics_anomaly_detection(args):
         # small group
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params(test_anomaly_small_loader_select_params, test_masks_small_loader_select_params)
 
-        best_threshold = iou_scores_df_small_group.max(axis=0).idxmax()
-        best_num_timesteps = iou_scores_df_small_group.max(axis=1).idxmax()
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_small_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_iterations, best_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_small_loader_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_small_loader_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_iterations=best_erosion_iterations, dilation_iterations=best_dilation_iterations)
 
         
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
-        metrics_result_text += f"Small group: best threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Iterations: {best_erosion_iterations}\n"
+        metrics_result_text += f"Best Dilation Iterations: {best_dilation_iterations}\n"
+        print(metrics_result_text)
+
+    elif args.dataset["test"] == "soop": 
+    
+        iou_scores_df, dice_scores_df = compute_select_params(test_anomaly_loader_select_params, test_masks_loader_select_params)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_iterations, best_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_loader_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_iterations=best_erosion_iterations, dilation_iterations=best_dilation_iterations)
 
         
-        metrics_result_text += f"Small group: best number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Iterations: {best_erosion_iterations}\n"
+        metrics_result_text += f"Best Dilation Iterations: {best_dilation_iterations}\n"
+        
         print(metrics_result_text)
-    elif args.dataset["test"] == "soop":
-        if "flair" in args.dataset["name"].lower():
-            num_timesteps = 50 
-            compute_metrics(test_anomaly_loader_metrics, None, timesteps=num_timesteps, threshold=None)
-        elif "adc" in args.dataset["name"].lower():
-            num_timesteps = 50
-            compute_metrics(test_anomaly_loader_metrics, None, timesteps=num_timesteps, threshold=None)
+
 
 
 
