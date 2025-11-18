@@ -45,8 +45,6 @@ def main():
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
 
         
-    
-
 
     for step in args.pipeline:
         
@@ -74,8 +72,6 @@ def main():
             print("Launching compute_metrics_thor_anomaly_detection")
             launch_compute_metrics_thor_anomaly_detection(args)
         
-            
-    
 
 
 if __name__ == "__main__":

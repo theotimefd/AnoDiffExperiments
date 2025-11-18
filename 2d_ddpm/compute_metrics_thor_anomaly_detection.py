@@ -71,7 +71,7 @@ def launch_compute_metrics_thor_anomaly_detection(args):
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/"
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_thor/"
     if args.dataset["save_anomaly_maps"]:
         os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 

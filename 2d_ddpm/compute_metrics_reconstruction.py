@@ -136,10 +136,10 @@ def launch_compute_metrics_reconstruction(args):
         
         simplexObj = simplex.Simplex_CLASS()
 
-        if args.noise["normalize"] == False:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=False).to(device)
-        else:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=True).to(device) 
+        if args.noise["type"] == "simplex":
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=args.noise["normalize"]).to(device)
+        if args.noise["type"] == "gaussian":
+            noise = torch.randn(image.shape).to(device)
         
 
         if timesteps >= infer_scheduler.num_train_timesteps:
