@@ -46,6 +46,18 @@ from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
 import lpips
 
+def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
+    # to be used only on mri images with intensities between 0 and 1
+    input_np = input_image.cpu().numpy()
+
+    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
+
+    peak_value = bin_edges[np.argmax(hist)]
+
+    normalized_image = input_image / peak_value * target_value
+
+    return normalized_image
+
 def launch_compute_metrics_reconstruction(args):
     """
     Computes reconstruction metrics on the test_reconstruction set and visualize some results
@@ -205,7 +217,7 @@ def launch_compute_metrics_reconstruction(args):
                     psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
                     lpips_dict[noise_timesteps].append(np.mean(loss_fn_lpips.forward(infered.to(device), test_reconstruction_images).detach().cpu().numpy().flatten()))
 
-                elif len(image_batch.shape)==5: # full volumes
+                elif len(image_batch.shape)==5: # full volumes by slices
                     full_volume_test = True
                     infered_slices = []
                     lpips_volume = []
@@ -215,6 +227,7 @@ def launch_compute_metrics_reconstruction(args):
                         infered_slices.append(infered_slice.unsqueeze(-1))
 
                     infered = torch.cat(infered_slices, dim=-1)
+                    infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
                     
                     mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten())
                     ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end], infered).detach().cpu().numpy().flatten()))

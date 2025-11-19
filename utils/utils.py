@@ -2,6 +2,7 @@ import numpy as np
 from monai.utils.type_conversion import convert_to_numpy
 from monai.bundle import ConfigParser
 import sys
+import time
 sys.path.append("..")
 sys.path.append("../..")
 
@@ -46,3 +47,6 @@ def visualize_one_slice_in_3d_image(image, axis: int = 2):
         raise ValueError("axis should be in [0,1,2]")
     draw_img = np.stack([draw_img, draw_img, draw_img], axis=-1)
     return draw_img
+
+def tprint(text):
+    print(f"[{time.strftime('%H:%M:%S')}] {text}")

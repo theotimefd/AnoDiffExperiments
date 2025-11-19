@@ -235,17 +235,18 @@ def launch_train(args):
         if (epoch + 1) % val_interval == 0:
             model.eval()
             val_epoch_loss = 0
-            for step, batch in enumerate(val_loader):
-                images = batch.to(device)
-                
-                if args.noise["type"] == "simplex":
-                    val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
-                elif args.noise["type"] == "gaussian":
-                    val_loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+            with torch.no_grad():
+                for step, batch in enumerate(val_loader):
+                    images = batch.to(device)
+                    
+                    if args.noise["type"] == "simplex":
+                        val_loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
+                    elif args.noise["type"] == "gaussian":
+                        val_loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
 
-                val_epoch_loss += val_loss.item()
+                    val_epoch_loss += val_loss.item()
 
-                #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
+                    #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             
             if rank==0:
                 
@@ -281,5 +282,5 @@ def launch_train(args):
                     #plt.axis("off")
                     #plt.show()
         
-        print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
+    print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
     

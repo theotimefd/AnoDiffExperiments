@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_0",
     "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
-    "pipeline": ["compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -132,8 +132,8 @@
             }
         },
         "noise_rate_min": 0.05,
-        "noise_rate_max": 0.30,
+        "noise_rate_max": 0.20,
         "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.35
+        "noise_rate_visualize":0.15
     }
 }
