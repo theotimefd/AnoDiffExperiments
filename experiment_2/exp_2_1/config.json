@@ -16,7 +16,7 @@
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
-    "show_summary_figures": false,
+    "show_summary_figures": true,
     "slice_indexes_start":22,
     "slice_indexes_end": 94,
     "train_transforms": {
@@ -134,6 +134,6 @@
         "noise_rate_min": 0.05,
         "noise_rate_max": 0.30,
         "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.35
+        "noise_rate_visualize":0.2
     }
 }

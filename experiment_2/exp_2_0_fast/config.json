@@ -16,7 +16,7 @@
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
-    "show_summary_figures": false,
+    "show_summary_figures": true,
     "slice_indexes_start":22,
     "slice_indexes_end": 94,
     "train_transforms": {

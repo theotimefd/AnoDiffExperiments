@@ -808,17 +808,17 @@ def launch_compute_metrics_anomaly_detection(args):
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_large_group.idxmax()['IOU']
-        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+        best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(test_anomaly_large_loader_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
         metrics_result_text += f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
         metrics_result_text += "\n"
         tprint(metrics_result_text)
         
@@ -835,10 +835,10 @@ def launch_compute_metrics_anomaly_detection(args):
         
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}"
         metrics_result_text += "\n"
         tprint(metrics_result_text)
 
@@ -856,9 +856,9 @@ def launch_compute_metrics_anomaly_detection(args):
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
         
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}"
         metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
         tprint(metrics_result_text)
 
@@ -886,14 +886,31 @@ def launch_compute_metrics_anomaly_detection(args):
     
     if args.show_summary_figures:
         #infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
-        infer_timesteps_visualize = best_num_timesteps
+        
 
-        if args.dataset["test"] == "brats" or args.dataset["test"] == "soop":
+        if args.dataset["test"] == "brats":
             image_loader = test_anomaly_loader_metrics
             mask_loader = test_masks_loader_metrics
-        elif args.dataset["test"] == "isles":
+            infer_timesteps_visualize = best_num_timesteps
+            threshold_visualize = best_threshold
+            erosion_dilation_iterations_visualize = best_erosion_dilation_iterations
+            median_filter_size_visualize = best_median_filter_size
+
+        elif args.dataset["test"] == "isles" or args.dataset["test"] == "soop":
             image_loader = test_anomaly_large_loader_metrics
             mask_loader = test_masks_large_loader_metrics
+            infer_timesteps_visualize = best_num_timesteps_large_group
+            threshold_visualize = best_threshold_large_group
+            erosion_dilation_iterations_visualize = best_erosion_dilation_iterations_large_group
+            median_filter_size_visualize = best_median_filter_size_large_group
+
+        elif args.dataset["test"] == "soop_fast":
+            image_loader = test_anomaly_large_loader_metrics_small
+            mask_loader = test_masks_large_loader_metrics_small
+            infer_timesteps_visualize = best_num_timesteps
+            threshold_visualize = best_threshold
+            erosion_dilation_iterations_visualize = best_erosion_dilation_iterations
+            median_filter_size_visualize = best_median_filter_size
 
         for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
             if i>0:break
@@ -916,6 +933,8 @@ def launch_compute_metrics_anomaly_detection(args):
                     infered_images.append(my_sample(test_anomaly_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=False))
                 average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
                 average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
+            
+            
 
         # ----------- PLOT -----------
 
@@ -950,18 +969,33 @@ def launch_compute_metrics_anomaly_detection(args):
 
             # Difference images
             difference_image = np.abs(original_image - average_infered_image_cpu)
-            axes[2, idx*2].imshow(difference_image, cmap='jet', vmin=0, vmax=1)
-            axes[2, idx*2].set_title(f'Difference {idx+1}')
+            # apply median filter if specified
+            if median_filter_size_visualize is not None and median_filter_size_visualize > 0:
+                final_anomaly_map_np = difference_image
+                for b in range(final_anomaly_map_np.shape[0]):
+                    final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size_visualize)
+                final_anomaly_map = final_anomaly_map_np
+            else:
+                final_anomaly_map = difference_image
+            
+            axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=1)
+            axes[2, idx*2].set_title(f'Difference {idx+1}, median filter size: {median_filter_size_visualize}')
             axes[2, idx*2].axis('off')
 
-            axes[2, idx*2+1].hist(difference_image[difference_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[2, idx*2+1].hist(final_anomaly_map[final_anomaly_map>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
             axes[2, idx*2+1].set_ylim(0, 2000)
             axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
             # Thresholded difference images
-            thresholded_difference_image = (difference_image > best_threshold).astype(np.float32)
-            axes[3, idx*2].imshow(thresholded_difference_image, cmap='gray', vmin=0, vmax=1)
-            axes[3, idx*2].set_title(f'Thresholded Difference {idx+1}')
+            thresholded_difference_image = (final_anomaly_map > threshold_visualize)#.astype(np.float32)
+            ano_segmentation_np = thresholded_difference_image
+            """if erosion_dilation_iterations_visualize > 0:
+                ano_segmentation_np = thresholded_difference_image
+                ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)
+                ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)"""
+
+            axes[3, idx*2].imshow(ano_segmentation_np, cmap='gray', vmin=0, vmax=1)
+            axes[3, idx*2].set_title(f'Thresholded Difference {idx+1}, erosion-dilation steps: {erosion_dilation_iterations_visualize}')
             axes[3, idx*2].axis('off')
 
             # ground truth masks

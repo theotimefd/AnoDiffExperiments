@@ -211,6 +211,7 @@ def launch_compute_metrics_reconstruction(args):
                 if len(image_batch.shape)==4: # 2D slices
                     
                     infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                    infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
 
                     mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
                     ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
