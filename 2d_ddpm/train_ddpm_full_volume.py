@@ -27,7 +27,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
 import utils.custom_transforms as custom_transforms
-from utils.utils import define_instance
+from utils.utils import *
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 
@@ -288,5 +288,5 @@ def launch_train_full_volume(args):
                     #plt.axis("off")
                     #plt.show()
         
-        print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
+        tprint(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
     

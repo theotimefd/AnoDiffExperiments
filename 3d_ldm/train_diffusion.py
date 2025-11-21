@@ -224,11 +224,14 @@ def launch_train_diffusion(args):
 
     for epoch in range(max_epochs):
         unet.train()
-        epoch_loss = 0
+        
         lr_scheduler.step()
         if ddp_bool:
             train_loader.sampler.set_epoch(epoch)
             val_loader.sampler.set_epoch(epoch)
+        
+        epoch_loss = 0
+
         for step, batch in enumerate(train_loader):
             images = batch.to(device)
             optimizer_diff.zero_grad(set_to_none=True)
@@ -263,10 +266,12 @@ def launch_train_diffusion(args):
             scaler.step(optimizer_diff)
             scaler.update()
 
-            # write train loss for each batch into tensorboard
-            if rank == 0:
-                total_step += 1
-                writer.add_scalar("train_diffusion_loss_iter", loss, total_step)
+            epoch_loss += loss.item()
+
+        # write train loss for each epoch into tensorboard
+        if rank == 0:
+            total_step += 1
+            writer.add_scalar("train_diffusion_loss", epoch_loss/(step+1), epoch)
 
         # validation
         if epoch % val_interval == 0:
@@ -282,7 +287,7 @@ def launch_train_diffusion(args):
                         noise = torch.randn(noise_shape, dtype=images.dtype).to(device)
 
                         timesteps = torch.randint(
-                            0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                            0, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), (images.shape[0],), device=images.device
                         ).long()
 
                         # Get model prediction
@@ -320,6 +325,7 @@ def launch_train_diffusion(args):
                         # save best model
                         if val_recon_epoch_loss < best_val_recon_epoch_loss and rank == 0:
                             best_val_recon_epoch_loss = val_recon_epoch_loss
+                            writer.add_scalar("best_val_diffusion_loss", best_val_recon_epoch_loss, epoch)
                             if ddp_bool:
                                 torch.save(unet.module.state_dict(), trained_diffusion_path)
                             else:

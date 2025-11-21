@@ -38,7 +38,7 @@ import pandas as pd
 import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
-from utils.utils import define_instance
+from utils.utils import *
 
 from monai.metrics import compute_iou
 
@@ -155,7 +155,7 @@ def launch_compute_metrics_reconstruction(args):
         
 
         if timesteps >= infer_scheduler.num_train_timesteps:
-            print(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)
+            tprint(f"{timesteps} is too high. Setting to {infer_scheduler.num_train_timesteps-1}")
 
         timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
 
@@ -206,7 +206,7 @@ def launch_compute_metrics_reconstruction(args):
 
             for i, noise_timesteps in enumerate(NOISE_RANGE):
 
-                print(f"inference for {noise_timesteps} noise timesteps")
+                #print(f"inference for {noise_timesteps} noise timesteps")
                 
                 if len(image_batch.shape)==4: # 2D slices
                     

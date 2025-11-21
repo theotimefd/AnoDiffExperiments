@@ -50,3 +50,20 @@ def visualize_one_slice_in_3d_image(image, axis: int = 2):
 
 def tprint(text):
     print(f"[{time.strftime('%H:%M:%S')}] {text}")
+
+
+def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
+    # scales the histogram peak (most occurred pixel intensity) to target value
+    # to be used only on mri images with intensities between 0 and 1
+    try:
+        input_np = input_image.cpu().numpy()
+    except AttributeError:
+        input_np = input_image
+
+    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
+
+    peak_value = bin_edges[np.argmax(hist)]
+
+    normalized_image = input_image / peak_value * target_value
+
+    return normalized_image
