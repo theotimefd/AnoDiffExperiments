@@ -47,39 +47,29 @@ from monai.metrics import compute_iou, DiceMetric
 from scipy.ndimage import median_filter, binary_erosion, binary_dilation
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 
 DEVICE_TYPE = "cuda:0"
 
-
-def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder, total_nb_images, num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try):
-    # takes an input folder with all the saved infered 3D anomaly maps 
-    # and tests different combinations of post-processing and returns and saves a table with all the scores for each set of parameters
-
-
-    dm = DiceMetric(reduction="sum")
-
-    # Create the MultiIndex from timesteps, thresholds, median filter sizes, erosion and dilation iterations
-    iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
-    iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
-    iou_scores_df.fillna(0.0, inplace=True)
-
-    dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
-    dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
-    dice_scores_df.fillna(0.0, inplace=True)
-
-    def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder, 
+def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder, 
                              thresholds_to_try, median_filter_sizes_to_try, 
                              erosion_dilation_iterations_to_try):
         """Process a single anomaly file and return scores for all parameter combinations."""
         
+        dm = DiceMetric(reduction="sum")
+
         local_iou_scores = {}
         local_dice_scores = {}
         
+        
+        #tprint(f"starting processing {anomaly_file}")
+
         anomaly_map_nib = nib.load(os.path.join(anomaly_maps_folder, anomaly_file))
         anomaly_map = anomaly_map_nib.get_fdata()
         timesteps = int(anomaly_file.split('.')[0].split('_')[-1])
 
-        mask_nib = nib.load(os.path.join(masks_folder, anomaly_file))
+        mask_nib = nib.load(os.path.join(masks_folder, f"{anomaly_file.split('_')[0]}.nii.gz"))
         mask = torch.from_numpy(mask_nib.get_fdata())
         
         # Pre-compute filtered versions
@@ -89,14 +79,28 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
                 filtered_np = median_filter(anomaly_map, size=median_filter_size)
                 filtered_maps[median_filter_size] = torch.from_numpy(filtered_np)
         
+        
+        #tprint(f"computed median filtered for {anomaly_file}")
+
         # Iterate through all combinations efficiently
         for median_filter_size in median_filter_sizes_to_try:
             final_anomaly_map = filtered_maps[median_filter_size]
             
+            
+            #tprint(f"median filter size {median_filter_size} for {anomaly_file}")
+            #tprint(f"next: thresholds to try: {thresholds_to_try}")
+
             for threshold in thresholds_to_try:
                 ano_segmentation_base = (final_anomaly_map > threshold)
+
+                
+                #tprint(f"threshold {threshold} for {anomaly_file}")
                 
                 for erosion_dilation_iterations in erosion_dilation_iterations_to_try:
+
+                    
+                    #tprint(f"erosion_dilation {erosion_dilation_iterations} for {anomaly_file}")
+
                     if erosion_dilation_iterations > 0:
                         ano_segmentation_np = ano_segmentation_base.cpu().numpy()
                         
@@ -107,10 +111,14 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
                     else:
                         ano_segmentation = ano_segmentation_base
 
+                    #tprint(f"computing iou score for {anomaly_file} ..")
+
                     # Compute metrics
                     iou_score = compute_iou(ano_segmentation, mask)
                     flattened_iou_score = iou_score.cpu().numpy().flatten()
                     flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)]
+
+                    #tprint(f"computing dice score for {anomaly_file} ..")
 
                     dice_score = dm(ano_segmentation, mask).cpu().numpy().flatten()
                     dice_score = dice_score[~np.isnan(dice_score)]
@@ -120,9 +128,53 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
                     local_iou_scores[idx] = np.sum(flattened_iou_score)
                     local_dice_scores[idx] = np.sum(dice_score)
         
+        #tprint(f"finished for {anomaly_file} ..")
+
         return local_iou_scores, local_dice_scores
 
-    # Prepare partial function with fixed parameters
+def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder, total_nb_images, num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try):
+    # takes an input folder with all the saved infered 3D anomaly maps 
+    # and tests different combinations of post-processing and returns and saves a table with all the scores for each set of parameters
+
+    tprint("launching compute_select_parasms_multithreaded")
+    
+
+    # Create the MultiIndex from timesteps, thresholds, median filter sizes, erosion and dilation iterations
+    iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
+    iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
+    iou_scores_df.fillna(0.0, inplace=True)
+
+    dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
+    dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
+    dice_scores_df.fillna(0.0, inplace=True)
+
+
+    anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
+    if not anomaly_files:
+        raise RuntimeError(f"No anomaly map files found in '{anomaly_maps_folder}'.")
+
+    process_func = partial(
+        process_anomaly_file,
+        anomaly_maps_folder=anomaly_maps_folder,
+        masks_folder=masks_folder,
+        thresholds_to_try=thresholds_to_try,
+        median_filter_sizes_to_try=median_filter_sizes_to_try,
+        erosion_dilation_iterations_to_try=erosion_dilation_iterations_to_try,
+    )
+
+    max_workers = min(32, mp.cpu_count())
+    ctx = mp.get_context("spawn")
+
+    if len(anomaly_files) == 1 or max_workers == 1:
+        results = [process_func(file_name) for file_name in anomaly_files]
+    else:
+        results = []
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as executor:
+            futures = {executor.submit(process_func, file_name): file_name for file_name in anomaly_files}
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing anomaly maps"):
+                results.append(future.result())
+
+    """# Prepare partial function with fixed parameters (This one gets stuck with no errors)
     process_func = partial(process_anomaly_file, 
                           anomaly_maps_folder=anomaly_maps_folder,
                           masks_folder=masks_folder,
@@ -131,12 +183,33 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
                           erosion_dilation_iterations_to_try=erosion_dilation_iterations_to_try)
     
     # Use multiprocessing to process files in parallel
-    anomaly_files = os.listdir(anomaly_maps_folder)
-    num_processes = min(cpu_count(), len(anomaly_files))
+    anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
+    if not anomaly_files:
+        raise RuntimeError(f"No anomaly map files found in '{anomaly_maps_folder}'.")
     
-    with Pool(processes=num_processes) as pool:
-        results = pool.map(process_func, anomaly_files)
+    max_workers = min(4, cpu_count())
+    num_processes = min(max_workers, len(anomaly_files))
     
+    if num_processes <= 1:
+        results = [process_func(file_name) for file_name in anomaly_files]
+    else:
+        with Pool(processes=num_processes) as pool:
+            results = pool.map(process_func, anomaly_files)"""
+    
+    # try without multiprocessing
+    """results = []
+
+    for anomaly_file in os.listdir(anomaly_maps_folder):
+
+        tprint(f"processing first anomaly file {anomaly_file}")
+
+        local_iou_scores,local_dice_scores = process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder, 
+                             thresholds_to_try, median_filter_sizes_to_try, 
+                             erosion_dilation_iterations_to_try)
+        results.append((local_iou_scores, local_dice_scores))"""
+    
+    tprint("multiprocesses all finished")
+
     # Aggregate results from all processes
     for local_iou_scores, local_dice_scores in results:
         for idx, iou_val in local_iou_scores.items():
@@ -146,15 +219,14 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
             else:
                 iou_scores_df.loc[idx, "IOU"] += iou_val
                 dice_scores_df.loc[idx, "DICE"] += local_dice_scores[idx]
-                    
+    
+    # Divide everything by the number of images (moved outside the loop)
+    iou_scores_df = iou_scores_df / total_nb_images
+    dice_scores_df = dice_scores_df / total_nb_images
 
-        #divide everything by the number of images
-        iou_scores_df = iou_scores_df / total_nb_images
-        dice_scores_df = dice_scores_df / total_nb_images
+    return iou_scores_df, dice_scores_df
 
-        return iou_scores_df, dice_scores_df
-
-def compute_metrics(args, device, infer_scheduler,image_loader, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations):
+def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations):
         """
         input:
             image_loader: DataLoader for the anomaly images
@@ -175,6 +247,8 @@ def compute_metrics(args, device, infer_scheduler,image_loader, mask_loader, tim
         iou_scores = []
         dice_scores = []
 
+        basic_affine = nib.load(image_paths[0]).affine
+
         no_masks = False
         if mask_loader is None:
             mask_loader = image_loader # hack so the for loop works
@@ -192,58 +266,34 @@ def compute_metrics(args, device, infer_scheduler,image_loader, mask_loader, tim
 
 
             with autocast(device_type=DEVICE_TYPE, enabled=True):
-                if args.spatial_dims_val_test == 2: # single 2D slice segmentation
-                    # Perform 3 inferences and average the results
-                    infered_images = []
-                    for _ in range(3):
-                        infered_images.append(my_sample(test_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
-                    average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
-                    average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
-                    final_anomaly_map = torch.abs(average_infered_image - test_images)
+                
+                infered_slices = []
 
-                    # apply median filter if specified
-                    if median_filter_size is not None and median_filter_size > 0:
-                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
-                        for b in range(final_anomaly_map_np.shape[0]):
-                            final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
-                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+                # infer slice by slice
+                for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
+                    infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    infered_slices.append(infered_slice.unsqueeze(-1))
 
-                    if args.dataset["save_anomaly_maps"]:
-                        for idx_in_batch in range(final_anomaly_map.shape[0]):
-                            #save as png
-                            image_id= i*test_images.shape[0] + idx_in_batch
-                            image_name = os.path.basename(test_anomaly_images[image_id])
-                            plt.imsave(ANOMALY_MAPS_DIR+f"ano_map_{image_name.split('.')[0]}.png", final_anomaly_map[idx_in_batch].cpu().numpy(), vmin=0, vmax=1, cmap='jet')
+                # stack the slices back to a 3D volume
+                average_infered_image = torch.cat(infered_slices, dim=-1)
+                average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
+                # make the anomaly map (difference between infered and original)
+                final_anomaly_map = torch.zeros_like(test_images)
+                final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
 
-                elif args.spatial_dims_val_test == 3: # full slice by slice 3D volume segmentation
-                    infered_slices = []
-
-                    # infer slice by slice
-                    for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                        infered_slice = my_sample(test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
-                        infered_slices.append(infered_slice.unsqueeze(-1))
-
-                    # stack the slices back to a 3D volume
-                    average_infered_image = torch.cat(infered_slices, dim=-1)
-                    average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
-    
-                    # make the anomaly map (difference between infered and original)
-                    final_anomaly_map = torch.zeros_like(test_images)
-                    final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
-
-                    # apply median filter if specified
-                    if median_filter_size is not None and median_filter_size > 0:
-                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
-                        for b in range(final_anomaly_map_np.shape[0]):
-                            final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
-                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
-                    
-                    if args.dataset["save_anomaly_maps"]:
-                        for idx_in_batch in range(final_anomaly_map.shape[0]):
-                            image_id = i*test_images.shape[0] + idx_in_batch
-                            image_name = os.path.basename(test_anomaly_images[image_id])
-                            nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
+                # apply median filter if specified
+                if median_filter_size is not None and median_filter_size > 0:
+                    final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                    for b in range(final_anomaly_map_np.shape[0]):
+                        final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+                    final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+                
+                if args.dataset["save_anomaly_maps"]:
+                    for idx_in_batch in range(final_anomaly_map.shape[0]):
+                        image_id = i*test_images.shape[0] + idx_in_batch
+                        image_name = os.path.basename(image_paths[image_id])
+                        nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
 
             #tprint(f"unprocessed anomaly map shape: {final_anomaly_map.shape}")
 
@@ -284,7 +334,131 @@ def compute_metrics(args, device, infer_scheduler,image_loader, mask_loader, tim
 
         return mean_iou, std_iou, mean_dice, std_dice
 
-def launch_compute_metrics_anomaly_detection(args):
+
+def show_summary_figure(args, device, model, infer_scheduler, image_loader, mask_loader, timesteps, median_filter_size, threshold, erosion_dilation_iterations, metrics_result_text, ROOT_DIR, EXPERIMENT_NAME, SUB_EXPERIMENT_NAME):
+
+    
+    for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+        if i>0:break
+
+        if args.spatial_dims_val_test == 2:
+            test_anomaly_images = image_batch.to(device)
+            test_anomaly_masks = mask_batch.to(device)
+        elif args.spatial_dims_val_test == 3:
+            test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device)
+            test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device)
+        
+        test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
+        test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
+
+        with autocast(device_type=DEVICE_TYPE, enabled=True):
+
+            # Perform 3 inferences and average the results
+            infered_images = []
+            for _ in range(3):
+                infered_images.append(my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
+            average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
+            average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
+        
+        
+
+    # ----------- PLOT -----------
+
+    fig, axes = plt.subplots(6, 8, figsize=(25, 17), constrained_layout=True)
+    plt.tight_layout()
+
+    for idx in range(min(4, test_anomaly_images.shape[0])):
+
+        # Original test_anomaly images
+        original_image = test_anomaly_images[idx, 0].cpu().numpy()
+        axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
+        axes[0, idx*2].set_title(f'Original {idx+1}')
+        axes[0, idx*2].axis('off')
+
+        axes[0, idx*2+1].hist(original_image[original_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[0, idx*2+1].set_ylim(0, 2000)
+        axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        
+        
+
+        # 3x average inferred images
+        #print(average_infered_image.shape)
+        average_infered_image_cpu = average_infered_image[idx, 0].cpu().numpy()
+        
+        axes[1, idx*2].imshow(average_infered_image_cpu, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].set_title(f'Inferred {idx+1}')
+        axes[1, idx*2].axis('off')
+
+        axes[1, idx*2+1].hist(average_infered_image_cpu[average_infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].set_ylim(0, 2000)
+        axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        # Difference images
+        difference_image = np.abs(original_image - average_infered_image_cpu)
+        # apply median filter if specified
+        if median_filter_size is not None and median_filter_size > 0:
+            final_anomaly_map_np = difference_image
+            for b in range(final_anomaly_map_np.shape[0]):
+                final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+            final_anomaly_map = final_anomaly_map_np
+        else:
+            final_anomaly_map = difference_image
+        
+        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].set_title(f'Difference {idx+1}, median filter size: {median_filter_size}')
+        axes[2, idx*2].axis('off')
+
+        axes[2, idx*2+1].hist(final_anomaly_map[final_anomaly_map>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[2, idx*2+1].set_ylim(0, 2000)
+        axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        # Thresholded difference images
+        thresholded_difference_image = (final_anomaly_map > threshold)#.astype(np.float32)
+        ano_segmentation_np = thresholded_difference_image
+        """if erosion_dilation_iterations_visualize > 0: #TODO
+            ano_segmentation_np = thresholded_difference_image
+            ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)
+            ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)"""
+
+        axes[3, idx*2].imshow(ano_segmentation_np, cmap='gray', vmin=0, vmax=1)
+        axes[3, idx*2].set_title(f'Thresholded Difference {idx+1}, erosion-dilation steps: {erosion_dilation_iterations}')
+        axes[3, idx*2].axis('off')
+
+        # ground truth masks
+        ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
+        axes[4, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
+        axes[4, idx*2].set_title(f'Ground Truth {idx+1}')
+        axes[4, idx*2].axis('off')
+
+        axes[4, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[4, idx*2+1].set_ylim(0, 2000)
+        axes[4, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        axes[0, idx*2+1].set_box_aspect(1) # Set the aspect ratio of the histogram subplot 
+        axes[1, idx*2+1].set_box_aspect(1)  
+        axes[2, idx*2+1].set_box_aspect(1)  
+        axes[3, idx*2+1].set_box_aspect(1) 
+        axes[4, idx*2+1].set_box_aspect(1)  
+
+    
+    # Add an empty row to create more whitespace for the figtext
+    for idx in range(8):
+        axes[5, idx].axis('off')
+    # Add overall title with metric results
+    if args.spatial_dims_val_test == 2:
+        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
+    elif args.spatial_dims_val_test == 3:
+        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
+
+    plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
+
+    if args.spatial_dims_val_test == 2:
+        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
+    if args.spatial_dims_val_test == 3:
+        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
+
+
+def launch_compute_metrics_anomaly_detection_rework(args):
     # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
     # The second 50% is used to compute the final IOU and DICE metrics with these best values.
     DEVICE_TYPE = "cuda:0"
@@ -298,9 +472,12 @@ def launch_compute_metrics_anomaly_detection(args):
 
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/"
-    if args.dataset["save_anomaly_maps"]:
-        os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
+    SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
+    
+    ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
+    os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
 
     model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
@@ -374,7 +551,7 @@ def launch_compute_metrics_anomaly_detection(args):
             test_masks_ds[len(test_masks_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
 
-    if args.dataset["test"] == "isles":
+    if args.dataset["test"] == "isles": #TODO renommer les massks et les images pour qu'ils aient exactement le meme nom
         large_group = ['sub-strokecase0023_ses-0001_msk.nii.gz', 'sub-strokecase0031_ses-0001_msk.nii.gz', 'sub-strokecase0047_ses-0001_msk.nii.gz', 'sub-strokecase0048_ses-0001_msk.nii.gz', 'sub-strokecase0062_ses-0001_msk.nii.gz', 'sub-strokecase0066_ses-0001_msk.nii.gz', 'sub-strokecase0081_ses-0001_msk.nii.gz', 'sub-strokecase0083_ses-0001_msk.nii.gz', 'sub-strokecase0087_ses-0001_msk.nii.gz', 'sub-strokecase0091_ses-0001_msk.nii.gz', 'sub-strokecase0123_ses-0001_msk.nii.gz', 'sub-strokecase0161_ses-0001_msk.nii.gz', 'sub-strokecase0162_ses-0001_msk.nii.gz', 'sub-strokecase0171_ses-0001_msk.nii.gz', 'sub-strokecase0176_ses-0001_msk.nii.gz', 'sub-strokecase0201_ses-0001_msk.nii.gz', 'sub-strokecase0211_ses-0001_msk.nii.gz', 'sub-strokecase0222_ses-0001_msk.nii.gz', 'sub-strokecase0223_ses-0001_msk.nii.gz', 'sub-strokecase0023_ses-0001_msk.nii.gz', 'sub-strokecase0031_ses-0001_msk.nii.gz', 'sub-strokecase0047_ses-0001_msk.nii.gz', 'sub-strokecase0048_ses-0001_msk.nii.gz', 'sub-strokecase0062_ses-0001_msk.nii.gz', 'sub-strokecase0066_ses-0001_msk.nii.gz', 'sub-strokecase0081_ses-0001_msk.nii.gz', 'sub-strokecase0083_ses-0001_msk.nii.gz', 'sub-strokecase0087_ses-0001_msk.nii.gz', 'sub-strokecase0091_ses-0001_msk.nii.gz', 'sub-strokecase0123_ses-0001_msk.nii.gz', 'sub-strokecase0161_ses-0001_msk.nii.gz', 'sub-strokecase0162_ses-0001_msk.nii.gz', 'sub-strokecase0171_ses-0001_msk.nii.gz', 'sub-strokecase0176_ses-0001_msk.nii.gz', 'sub-strokecase0201_ses-0001_msk.nii.gz', 'sub-strokecase0211_ses-0001_msk.nii.gz', 'sub-strokecase0222_ses-0001_msk.nii.gz', 'sub-strokecase0223_ses-0001_msk.nii.gz', 'sub-strokecase0230_ses-0001_msk.nii.gz', 'sub-strokecase0237_ses-0001_msk.nii.gz', 'sub-strokecase0240_ses-0001_msk.nii.gz', 'sub-strokecase0246_ses-0001_msk.nii.gz']
         large_group_adc_images = [ROOT_DIR+"datasets/final_adc_dataset_small/ISLES_registered/"+filename.replace("msk", "adc") for filename in large_group]
         large_group_flair_images = [ROOT_DIR+"datasets/final_flair_dataset_small/isles_registered/"+filename.replace("msk", "FLAIR") for filename in large_group]
@@ -432,23 +609,23 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_transforms = define_instance(args, "val_transforms")
 
         
-        test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in large_group]        
-        test_anomaly_large_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in large_group]
+        test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        test_anomaly_large_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
 
-        test_anomaly_medium_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in medium_group]        
-        test_anomaly_medium_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in medium_group]
+        test_anomaly_medium_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in medium_group]        
+        test_anomaly_medium_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in medium_group]
 
-        test_anomaly_small_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in small_group]        
-        test_anomaly_small_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in small_group]
+        test_anomaly_small_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in small_group]        
+        test_anomaly_small_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in small_group]
         
-        test_anomaly_large_images = sorted(test_anomaly_large_images, key=lambda x: os.path.basename(x).split('_')[0])
-        test_anomaly_large_masks = sorted(test_anomaly_large_masks, key=lambda x: os.path.basename(x).split('_')[0])
+        test_anomaly_large_images = sorted(test_anomaly_large_images, key=lambda x: os.path.basename(x).split('.')[0])
+        test_anomaly_large_masks = sorted(test_anomaly_large_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
-        test_anomaly_medium_images = sorted(test_anomaly_medium_images, key=lambda x: os.path.basename(x).split('_')[0])
-        test_anomaly_medium_masks = sorted(test_anomaly_medium_masks, key=lambda x: os.path.basename(x).split('_')[0])
+        test_anomaly_medium_images = sorted(test_anomaly_medium_images, key=lambda x: os.path.basename(x).split('.')[0])
+        test_anomaly_medium_masks = sorted(test_anomaly_medium_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
-        test_anomaly_small_images = sorted(test_anomaly_small_images, key=lambda x: os.path.basename(x).split('_')[0])
-        test_anomaly_small_masks = sorted(test_anomaly_small_masks, key=lambda x: os.path.basename(x).split('_')[0])
+        test_anomaly_small_images = sorted(test_anomaly_small_images, key=lambda x: os.path.basename(x).split('.')[0])
+        test_anomaly_small_masks = sorted(test_anomaly_small_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
         num_workers = 4
         ano_batch_size = 64
@@ -529,11 +706,11 @@ def launch_compute_metrics_anomaly_detection(args):
         
         test_anomaly_transforms = define_instance(args, "val_transforms")
         
-        test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in large_group]        
-        test_anomaly_large_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('_')[0] not in images_to_exclude and os.path.basename(path).split('_')[0] in large_group]
+        test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        test_anomaly_large_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
 
-        test_anomaly_large_images = sorted(test_anomaly_large_images, key=lambda x: os.path.basename(x).split('_')[0])
-        test_anomaly_large_masks = sorted(test_anomaly_large_masks, key=lambda x: os.path.basename(x).split('_')[0])
+        test_anomaly_large_images = sorted(test_anomaly_large_images, key=lambda x: os.path.basename(x).split('.')[0])
+        test_anomaly_large_masks = sorted(test_anomaly_large_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
 
         num_workers = 4
@@ -571,22 +748,296 @@ def launch_compute_metrics_anomaly_detection(args):
     # ------------------------ Compute the raw anomaly maps and save them as nifti files ------------------------ #
     # So that they can be used to compute metrics later with different postprocessing steps without having to recompute the anomaly maps each time.
 
+    model = define_instance(args, "network_def").to(device)
+
+    model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
+    model.eval()
+
+
+    if args.noise["type"] == "simplex":
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
+
+    elif args.noise["type"] == "gaussian":
+        infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+
+
     if args.dataset["test"] == "brats":
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images, timesteps, ANOMALY_MAPS_DIR)
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
             
-        iou_scores_df, dice_scores_df = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_images), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        iou_scores_df, dice_scores_df = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
             
-        iou_scores_df.to_csv(RESULTS_DIR+"iou_scores_brats.csv", index=False)
-        dice_scores_df.to_csv(RESULTS_DIR+"dice_scores_brats.csv", index=False)
+        iou_scores_df.to_csv(SUB_EXPERIMENT_DIR+"iou_scores_param_search_brats.csv", index=False)
+        dice_scores_df.to_csv(SUB_EXPERIMENT_DIR+"dice_scores_param_search_brats.csv", index=False)
 
-    if args.dataset["test"] == "soop" or args.dataset["test"] == "isles":
-        for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR+"large/")
-            make_anomaly_maps(args, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR+"medium/")
-            make_anomaly_maps(args, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR+"small/")
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_loader_metrics, test_anomaly_images, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
         
-            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_images), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
-    if args.dataset["test"] == "soop_fast":
+        metrics_result_text = f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size}\n"
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+        
+        tprint(metrics_result_text)
+
+        if args.show_summary_figures:
+            show_summary_figure(args, 
+                            device, 
+                            model, 
+                            infer_scheduler, 
+                            test_anomaly_large_loader_metrics, 
+                            test_masks_large_loader_metrics, 
+                            timesteps=best_num_timesteps, 
+                            median_filter_size=best_median_filter_size, 
+                            threshold=best_threshold, 
+                            erosion_dilation_iterations=best_erosion_dilation_iterations,
+                            metrics_result_text=metrics_result_text,
+                            ROOT_DIR=ROOT_DIR,
+                            EXPERIMENT_NAME=EXPERIMENT_NAME,
+                            SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                            )
+
+    if args.dataset["test"] == "isles": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
+        print("WARNING ISLES test is still not completely implemented")
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR)
+
+            # --------------------------------- large group
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            
+        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/TODO/TODO/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_large_group.csv", index=False)
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_large_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_large_group.idxmax()['IOU']
+        best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+
+        
+        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)
+        
+        if args.show_summary_figures:
+            show_summary_figure(args, 
+                            device, 
+                            model, 
+                            infer_scheduler, 
+                            test_anomaly_large_loader_metrics, 
+                            test_masks_large_loader_metrics, 
+                            timesteps=best_num_timesteps_large_group, 
+                            median_filter_size=best_median_filter_size_large_group, 
+                            threshold=best_threshold_large_group, 
+                            erosion_dilation_iterations=best_erosion_dilation_iterations_large_group,
+                            metrics_result_text=metrics_result_text,
+                            ROOT_DIR=ROOT_DIR,
+                            EXPERIMENT_NAME=EXPERIMENT_NAME,
+                            SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                            )
+        
+        for timesteps in num_timesteps_to_try:
+            # --------------------------------- medium group
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+
+        iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_medium_group.csv", index=False)
+        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_medium_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_medium_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
+        
+        metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)
+
+            # --------------------------------- small group
+        for timesteps in num_timesteps_to_try:
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+
+        iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_small_group.csv", index=False)
+        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_small_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_small_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
+        
+        metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+        tprint(metrics_result_text)
+    
+            
+
+    if args.dataset["test"] == "soop":
+        
+        # --------------------------------- large group
+        for timesteps in num_timesteps_to_try:       
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+
+        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_large_group.csv", index=False)
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_large_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_large_group.idxmax()['IOU']
+        best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+
+        
+        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)
+        
+        if args.show_summary_figures:
+            show_summary_figure(args, 
+                                device, 
+                                model, 
+                                infer_scheduler, 
+                                test_anomaly_large_loader_metrics, 
+                                test_masks_large_loader_metrics, 
+                                timesteps=best_num_timesteps_large_group, 
+                                median_filter_size=best_median_filter_size_large_group, 
+                                threshold=best_threshold_large_group, 
+                                erosion_dilation_iterations=best_erosion_dilation_iterations_large_group,
+                                metrics_result_text=metrics_result_text,
+                                ROOT_DIR=ROOT_DIR,
+                                EXPERIMENT_NAME=EXPERIMENT_NAME,
+                                SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                                )
+
+        # --------------------------------- medium group
+        for timesteps in num_timesteps_to_try:       
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+        
+        iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_medium_group.csv", index=False)
+        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_medium_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_medium_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
+        
+        metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)
+
+        # --------------------------------- small group
+        for timesteps in num_timesteps_to_try:       
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+        
+        iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+
+        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_small_group.csv", index=False)
+        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_small_group.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_small_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
+        
+        metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+        tprint(metrics_result_text)
+    
+    if args.dataset["test"] == "soop_fast":
+        
+        # --------------------------------- large group
+        for timesteps in num_timesteps_to_try:
+            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+
+        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params_small), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
+        
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop.csv", index=False)
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop.csv", index=False)
+
+        # Find the best parameters based on IOU score
+        best_params = iou_scores_df_large_group.idxmax()['IOU']
+        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images, test_masks_large_loader_metrics_small, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+
+        
+        metrics_result_text = f"soop_fast: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
+
+        tprint(metrics_result_text)
+
+
+        if args.show_summary_figures:
+            show_summary_figure(args, 
+                                device, 
+                                model, 
+                                infer_scheduler, 
+                                test_anomaly_large_loader_metrics_small, 
+                                test_masks_large_loader_metrics_small, 
+                                timesteps=best_num_timesteps, 
+                                median_filter_size=best_median_filter_size, 
+                                threshold=best_threshold, 
+                                erosion_dilation_iterations=best_erosion_dilation_iterations,
+                                metrics_result_text=metrics_result_text,
+                                ROOT_DIR=ROOT_DIR,
+                                EXPERIMENT_NAME=EXPERIMENT_NAME,
+                                SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                                )

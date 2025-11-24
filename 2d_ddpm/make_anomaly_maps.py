@@ -8,10 +8,12 @@ from utils.utils import *
 
 
 
-def make_anomaly_maps(args, device, infer_scheduler, image_loader, image_paths, timesteps, output_folder, replace_existing_files=False):
+def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_paths, timesteps, output_folder, replace_existing_files=False):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
+
+    os.makedirs(output_folder, exist_ok=True)    
 
     basic_affine = nib.load(image_paths[0]).affine
 
@@ -24,7 +26,7 @@ def make_anomaly_maps(args, device, infer_scheduler, image_loader, image_paths, 
 
             # infer slice by slice
             for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                infered_slice = my_sample(test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
                 infered_slices.append(infered_slice.unsqueeze(-1))
 
             # stack the slices back to a 3D volume
@@ -40,7 +42,7 @@ def make_anomaly_maps(args, device, infer_scheduler, image_loader, image_paths, 
             for idx_in_batch in range(final_anomaly_map.shape[0]):
                 image_id = i*test_images.shape[0] + idx_in_batch
                 image_name = os.path.basename(image_paths[image_id])
-                output_path = output_folder+f"ano_map_{image_name}_f{timesteps}.nii.gz"
+                output_path = output_folder+f"{image_name.split('.')[0]}_t_{timesteps}.nii.gz"
                 #if the output file doesn't exist already
                 if not os.path.exists(output_path):
                     nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), output_path)
