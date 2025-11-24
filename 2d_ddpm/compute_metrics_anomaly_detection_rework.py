@@ -610,22 +610,22 @@ def launch_compute_metrics_anomaly_detection_rework(args):
 
         
         test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
-        test_anomaly_large_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
+        large_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
 
         test_anomaly_medium_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in medium_group]        
-        test_anomaly_medium_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in medium_group]
+        medium_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in medium_group]
 
         test_anomaly_small_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in small_group]        
-        test_anomaly_small_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in small_group]
+        small_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in small_group]
         
         test_anomaly_large_images = sorted(test_anomaly_large_images, key=lambda x: os.path.basename(x).split('.')[0])
-        test_anomaly_large_masks = sorted(test_anomaly_large_masks, key=lambda x: os.path.basename(x).split('.')[0])
+        large_group_masks = sorted(large_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
         test_anomaly_medium_images = sorted(test_anomaly_medium_images, key=lambda x: os.path.basename(x).split('.')[0])
-        test_anomaly_medium_masks = sorted(test_anomaly_medium_masks, key=lambda x: os.path.basename(x).split('.')[0])
+        medium_group_masks = sorted(medium_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
         test_anomaly_small_images = sorted(test_anomaly_small_images, key=lambda x: os.path.basename(x).split('.')[0])
-        test_anomaly_small_masks = sorted(test_anomaly_small_masks, key=lambda x: os.path.basename(x).split('.')[0])
+        small_group_masks = sorted(small_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
         num_workers = 4
         ano_batch_size = 64

@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import time
 from datetime import timedelta
+from typing import Dict, List, Optional, Sequence, Tuple
 import sys
 sys.path.append("../..")
 
@@ -42,14 +43,12 @@ def setup_ddp(rank, world_size):
     device = torch.device(f"cuda:{rank}")
     return dist, device
 
-def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, normalize, device):
+def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, device, return_pred=False):
     with autocast("cuda", enabled=True):
         # Generate random noise
-        if normalize == False:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=False).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
-        else:
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=True).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025) 
-
+ 
+        noise = simplex_ddpm.generate_simplex_noise(simplexObj, images.shape, normalize=False).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
+ 
         # Create timesteps
         timesteps = torch.randint(0, num_timesteps, (images.shape[0],), device=images.device).long()
 
@@ -57,9 +56,11 @@ def compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, norm
         noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
 
         loss = F.mse_loss(noise_pred.float(), noise.float())
+        if return_pred:
+            return loss, noise_pred, noise
         return loss
 
-def compute_loss_gaussian(images, model, inferer, num_timesteps, device):
+def compute_loss_gaussian(images, model, inferer, num_timesteps, device, return_pred=False):
     with autocast("cuda", enabled=True):
         # Generate random noise
         noise = torch.randn_like(images).to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
@@ -71,16 +72,150 @@ def compute_loss_gaussian(images, model, inferer, num_timesteps, device):
         noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
 
         loss = F.mse_loss(noise_pred.float(), noise.float())
+        if return_pred:
+            return loss, noise_pred, noise
         return loss
 
+def _wrap_with_patch_crop(transform, patch_size: Optional[Tuple[int, int, int]]):
+    if patch_size is None:
+        return transform
+    patch_crop = transforms.RandSpatialCrop(roi_size=patch_size, random_size=False)
+    if transform is None:
+        return patch_crop
+    return transforms.Compose([transform, patch_crop])
 
-def launch_train_full_volume(args):
+
+def _diffusion_step(images, noise_type, simplexObj, model, inferer, num_timesteps, normalize, device, return_pred=False):
+    if noise_type == "simplex":
+        return compute_loss_simplex(images, simplexObj, model, inferer, num_timesteps, normalize, device, return_pred=return_pred)
+    return compute_loss_gaussian(images, model, inferer, num_timesteps, device, return_pred=return_pred)
+
+
+def _generate_patch_slices(spatial_shape: Sequence[int], patch_size: Sequence[int], overlap: Sequence[int]):
+    ranges: List[List[int]] = []
+    for dim, size, ov in zip(spatial_shape, patch_size, overlap):
+        step = max(size - ov, 1)
+        if dim <= size:
+            coords = [0]
+        else:
+            coords = list(range(0, max(dim - size, 0) + 1, step))
+            if coords[-1] != dim - size:
+                coords.append(dim - size)
+        ranges.append(coords)
+    for h in ranges[0]:
+        for w in ranges[1]:
+            for d in ranges[2]:
+                yield (slice(h, h + patch_size[0]), slice(w, w + patch_size[1]), slice(d, d + patch_size[2]))
+
+
+def _run_patchwise_inference(
+    volume: torch.Tensor,
+    patch_size: Sequence[int],
+    overlap: Sequence[int],
+    patch_batch_size: int,
+    noise_type: str,
+    simplexObj,
+    model,
+    inferer,
+    num_timesteps: int,
+    normalize: bool,
+    device,
+    collect_output: bool = False,
+):
+    aggregator_pred = torch.zeros_like(volume, dtype=torch.float32)
+    aggregator_target = torch.zeros_like(volume, dtype=torch.float32)
+    counts = torch.zeros_like(volume, dtype=torch.float32)
+    patch_queue: List[torch.Tensor] = []
+    slice_queue: List[Tuple[slice, slice, slice]] = []
+    total_patch_loss = 0.0
+    total_patches = 0
+
+    def _flush_queue():
+        nonlocal total_patch_loss, total_patches
+        if not patch_queue:
+            return
+        batch_tensor = torch.cat(patch_queue, dim=0)
+        loss, preds, targets = _diffusion_step(
+            batch_tensor, noise_type, simplexObj, model, inferer, num_timesteps, normalize, device, return_pred=True
+        )
+        patch_count = batch_tensor.shape[0]
+        total_patch_loss += loss.item() * patch_count
+        total_patches += patch_count
+        for idx, patch_slices in enumerate(slice_queue):
+            target_slice = (slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])
+            aggregator_pred[target_slice] += preds[idx].unsqueeze(0).float()
+            aggregator_target[target_slice] += targets[idx].unsqueeze(0).float()
+            counts[target_slice] += 1.0
+        patch_queue.clear()
+        slice_queue.clear()
+
+    for patch_slices in _generate_patch_slices(volume.shape[-3:], patch_size, overlap):
+        patch = volume[(slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])]
+        patch_queue.append(patch)
+        slice_queue.append(patch_slices)
+        if len(patch_queue) >= patch_batch_size:
+            _flush_queue()
+
+    _flush_queue()
+
+    counts = torch.clamp(counts, min=1.0)
+    stitched_pred = aggregator_pred / counts
+    stitched_target = aggregator_target / counts
+    volume_loss = F.mse_loss(stitched_pred.float(), stitched_target.float()).item()
+
+    if collect_output:
+        return volume_loss, stitched_pred, stitched_target
+    return volume_loss, None, None
+
+
+def _validate_batch_with_patches(
+    images: torch.Tensor,
+    patch_size: Sequence[int],
+    overlap: Sequence[int],
+    patch_batch_size: int,
+    noise_type: str,
+    simplexObj,
+    model,
+    inferer,
+    num_timesteps: int,
+    normalize: bool,
+    device,
+):
+    batch_loss = 0.0
+    volumes = images.shape[0]
+    for idx in range(volumes):
+        volume = images[idx : idx + 1]
+        vol_loss, _, _ = _run_patchwise_inference(
+            volume, patch_size, overlap, patch_batch_size, noise_type, simplexObj, model, inferer, num_timesteps, normalize, device
+        )
+        batch_loss += vol_loss
+    return batch_loss, volumes
+
+
+def launch_train_patch(args):
 
     ROOT_DIR = args.root_dir
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
     os.makedirs(MODELS_DIR, exist_ok=True)
+
+    
+    train_patch_size = args.dataset["patch_size"]
+    infer_patch_size = args.dataset["patch_size"]
+    patch_overlap = args.dataset["patch_overlap"]
+
+    patch_infer_batch_size = args.dataset["batch_size"]
+
+    image_size_value = args.image_size
+    base_edge = image_size_value[0]
+
+    fallback_patch_size = None
+    if base_edge is not None and base_edge > 0:
+        tentative_edge = max(base_edge // 2, 16)
+        tentative_edge = min(tentative_edge, base_edge)
+        fallback_patch_size = (tentative_edge, tentative_edge, tentative_edge)
+
 
     ddp_bool = args.gpus > 1  # whether to use distributed data parallel
 
@@ -95,6 +230,13 @@ def launch_train_full_volume(args):
 
     torch.cuda.set_device(device)
     print(f"Using {device}")
+
+    
+    if rank == 0:
+        print(
+            "Patch-based validation enabled with patch size "
+            f"{infer_patch_size} and overlap {patch_overlap} (patch batch size={patch_infer_batch_size})."
+        )
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
@@ -133,11 +275,12 @@ def launch_train_full_volume(args):
 
 
     train_transforms = define_instance(args, "train_transforms")
-    train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
+    train_transforms = _wrap_with_patch_crop(train_transforms, train_patch_size)
+    train_ds = CacheDataset(data=train_datalist[:batch_size], transform=train_transforms) #TODO: train_datalist[:batch_size]
 
 
     val_transforms = define_instance(args, "val_transforms")
-    val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
+    val_ds = CacheDataset(data=val_datalist[:batch_size], transform=val_transforms) #TODO: val_datalist[:batch_size]
     
 
     if ddp_bool:
@@ -157,12 +300,15 @@ def launch_train_full_volume(args):
 
     model = define_instance(args, "network_def").to(device)
 
+    simplexObj = None
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()
         scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
 
     elif args.noise["type"] == "gaussian":
         scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+
+    num_diffusion_steps = int(args.noise["noise_rate_train_and_infer"] * args.noise["num_timesteps_full_noise"])
 
     if args.diffusion_train["optimizer"]["type"] == "Adam":
         optimizer = torch.optim.Adam(params=model.parameters(), lr=args.diffusion_train["optimizer"]["lr"] * world_size)
@@ -216,9 +362,9 @@ def launch_train_full_volume(args):
             optimizer.zero_grad(set_to_none=True)
 
             if args.noise["type"] == "simplex":
-                loss = compute_loss_simplex(images, simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
+                loss = compute_loss_simplex(images, simplexObj, model, inferer, num_diffusion_steps, device=device)
             elif args.noise["type"] == "gaussian":
-                loss = compute_loss_gaussian(images, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+                loss = compute_loss_gaussian(images, model, inferer, num_diffusion_steps, device)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -237,29 +383,35 @@ def launch_train_full_volume(args):
 
         if (epoch + 1) % val_interval == 0:
             model.eval()
-            val_epoch_loss = 0
-            for step, batch in enumerate(val_loader):
-                images = batch.to(device)
-                
-                images = images[..., args.slice_indexes_start:args.slice_indexes_end] # TODO determine the number of slices to validate on    
-                
-                for slice_idx in range(images.shape[-1]):
 
-                    if args.noise["type"] == "simplex":
-                        val_loss = compute_loss_simplex(images[..., slice_idx], simplexObj, model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), normalize=args.noise["normalize"], device=device)
-                    elif args.noise["type"] == "gaussian":
-                        val_loss = compute_loss_gaussian(images[..., slice_idx], model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
+            val_epoch_loss = 0.0
+            total_val_volumes = 0
+            with torch.no_grad():
+                for step, batch in enumerate(val_loader):
+                    images = batch.to(device)
+                    images = images[..., args.slice_indexes_start:args.slice_indexes_end]
+                    batch_loss, processed = _validate_batch_with_patches(
+                        images,
+                        infer_patch_size,
+                        patch_overlap,
+                        patch_infer_batch_size,
+                        args.noise["type"],
+                        simplexObj,
+                        model,
+                        inferer,
+                        num_diffusion_steps,
+                        args.noise.get("normalize", False),
+                        device,
+                    )
+                    val_epoch_loss += batch_loss
+                    total_val_volumes += processed
+            avg_val_loss = val_epoch_loss / max(total_val_volumes, 1)
 
-                    val_epoch_loss += val_loss.item()
-
-                #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-            
             if rank==0:
-                
-                writer.add_scalar("val_loss", val_epoch_loss / (step + 1), epoch)
+                writer.add_scalar("val_loss", avg_val_loss, epoch)
 
-                if val_epoch_loss < best_val_epoch_loss:
-                    best_val_epoch_loss = val_epoch_loss
+                if avg_val_loss < best_val_epoch_loss:
+                    best_val_epoch_loss = avg_val_loss
                     best_val_epoch = epoch + 1
 
                     if ddp_bool:
@@ -269,11 +421,11 @@ def launch_train_full_volume(args):
 
                     print("saved new best metric model")
                     print(
-                        f"current epoch: {epoch + 1} current val loss: {val_epoch_loss/(step + 1):.4f}"
-                        f"\nbest val loss: {best_val_epoch_loss/(step + 1):.4f}"
+                        f"current epoch: {epoch + 1} current val loss: {avg_val_loss:.4f}"
+                        f"\nbest val loss: {best_val_epoch_loss:.4f}"
                         f" at epoch: {best_val_epoch}"
                     )
-                    writer.add_scalar("best_val_loss", best_val_epoch_loss/(step + 1), best_val_epoch)
+                    writer.add_scalar("best_val_loss", best_val_epoch_loss, best_val_epoch)
 
                     # can't visualize an inference image since we don't train from pure noise here
                     #noise = generate_simplex_noise(simplexObj, shape=(1,1,IMAGE_SIZE, IMAGE_SIZE)).to(device)
@@ -288,5 +440,5 @@ def launch_train_full_volume(args):
                     #plt.axis("off")
                     #plt.show()
         
-        print(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
+    print(f"Training complete, best val loss: {best_val_epoch_loss:.6f} at epoch {best_val_epoch}")
     
