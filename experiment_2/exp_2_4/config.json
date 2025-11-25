@@ -11,13 +11,13 @@
         "name": "final_adc_dataset_small_added_ixi",
         "test": "soop",
         "save_anomaly_maps":false,
-        "batch_size": 16,
-        "patch_size": [64, 64, 64],
+        "batch_size": 64,
         "patch_overlap": [16, 16, 16],
         "num_workers": 2,
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
+    "patch_size": [64, 64, 64],
     "show_summary_figures": true,
     "slice_indexes_start":22,
     "slice_indexes_end": 94,
@@ -50,7 +50,11 @@
         },
         {
             "_target_": "utils.custom_transforms.SetBackgroundToZero"
-        }]
+        },
+        {
+            "_target_": "monai.transforms.RandSpatialCrop", "roi_size": "@patch_size", "random_size": false
+        }
+    ]
     },
     "val_transforms": {
         "_target_": "monai.transforms.Compose",
