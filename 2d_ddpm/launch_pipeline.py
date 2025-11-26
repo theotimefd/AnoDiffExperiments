@@ -63,10 +63,6 @@ def main():
             tprint("Launching compute_metrics_reconstruction")
             launch_compute_metrics_reconstruction(args)
         
-        if step=="compute_metrics_anomaly_detection_old" and rank==0:
-            tprint("Launching compute_metrics_anomaly_detection (old version)")
-            launch_compute_metrics_anomaly_detection_old(args)
-        
         if step=="compute_metrics_anomaly_detection" and rank==0:
             tprint("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)

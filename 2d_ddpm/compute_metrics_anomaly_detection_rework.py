@@ -627,6 +627,9 @@ def launch_compute_metrics_anomaly_detection_rework(args):
         test_anomaly_small_images = sorted(test_anomaly_small_images, key=lambda x: os.path.basename(x).split('.')[0])
         small_group_masks = sorted(small_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
+        test_anomaly_small_images = test_anomaly_small_images[:200] # Test set : SOOP: we only kept the first 200 small group images otherwis takes too much time
+        small_group_masks = small_group_masks[:200] # Test set : SOOP: we only kept the first 200 small group images otherwis takes too much time
+
         num_workers = 4
         ano_batch_size = 64
 

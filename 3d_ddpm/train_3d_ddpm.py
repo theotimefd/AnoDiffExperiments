@@ -101,23 +101,31 @@ def launch_train(args):
     torch.autograd.set_detect_anomaly(False)
 
 
+    exclude_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset['name']}/exclude.csv")
+    exclude_list = []
+    if os.path.exists(exclude_csv):
+        with open(exclude_csv, mode="r") as file:
+            reader = csv.reader(file)
+            for line in reader:
+                    exclude_list.append(line[0])
+
     train_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset['name']}/train.csv")
     train_images_path = []
 
     with open(train_csv, mode='r') as file:
         reader = csv.reader(file)
-        for line in tqdm(reader):
-            #print(line)
-            train_images_path.append(ROOT_DIR+line[0])
+        for line in reader:
+            if line not in exclude_list:
+                train_images_path.append(ROOT_DIR+line[0])
 
     val_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset['name']}/val.csv")
     val_images_path = []
 
     with open(val_csv, mode='r') as file:
         reader = csv.reader(file)
-        for line in tqdm(reader):
-
-            val_images_path.append(ROOT_DIR+line[0])
+        for line in reader:
+            if line not in exclude_list:
+                val_images_path.append(ROOT_DIR+line[0])
 
     #train_datalist = sorted(train_images_path)
     train_datalist = train_images_path
