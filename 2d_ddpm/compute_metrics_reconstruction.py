@@ -221,7 +221,8 @@ def launch_compute_metrics_reconstruction(args):
                 elif len(image_batch.shape)==5: # full volumes by slices
                     full_volume_test = True
                     infered_slices = []
-                    lpips_volume = []
+                    lpips_volume = [] 
+
                     for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                         infered_slice = my_sample(test_reconstruction_images[...,slice_idx], infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
                         lpips_volume.append(np.mean(loss_fn_lpips.forward(infered_slice.to(device), test_reconstruction_images[...,slice_idx]).detach().cpu().numpy().flatten())) # since lpips only works for 2D images

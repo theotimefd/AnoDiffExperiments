@@ -2,7 +2,7 @@
     "experiment_name": "experiment_3",
     "sub_experiment_name": "exp_3_2",
     "description": "3D DDPM on adc with simplex noise, validation on whole volume",
-    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection_rework"],
+    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,

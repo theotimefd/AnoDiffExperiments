@@ -286,6 +286,7 @@ def launch_train_diffusion(args):
             autoencoder.eval()
             unet.eval()
             val_recon_epoch_loss = 0
+            
             with torch.no_grad():
                 with autocast("cuda", enabled=True):
                     # compute val loss
@@ -312,6 +313,7 @@ def launch_train_diffusion(args):
                         )
                         val_loss = F.mse_loss(noise_pred.float(), noise.float())
                         val_recon_epoch_loss += val_loss
+
                     val_recon_epoch_loss = val_recon_epoch_loss / (step + 1)
 
                     if ddp_bool:

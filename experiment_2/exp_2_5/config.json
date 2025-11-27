@@ -144,7 +144,7 @@
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
-        "ema":true
+        "ema":false
     },
     "compute_metrics_reconstruction":{
         "transforms": {
