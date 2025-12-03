@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_4",
     "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["train_ddpm"],
+    "pipeline": ["train_ddpm", "compute_metrics_reconstruction"],
     "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -108,7 +108,9 @@
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
-        "ema":false
+        "ema":false,
+        "resume_checkpoint": true,
+        "last_checkpoint_epoch": 160
     },
     "compute_metrics_reconstruction":{
         "transforms": {

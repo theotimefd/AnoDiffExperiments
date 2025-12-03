@@ -22,12 +22,13 @@ from monai.data.utils import pad_list_data_collate
 from torch.amp import autocast
 from tqdm import tqdm
 import random
-from typing import Dict, List, Optional, Sequence, Tuple
+
 import nibabel as nib
 
 from monai.inferers import DiffusionInferer
 from monai.networks.nets import DiffusionModelUNet
 from monai.networks.schedulers import DDPMScheduler
+
 
 from monai.utils import StrEnum
 from typing import Union
@@ -44,6 +45,7 @@ from monai.metrics import compute_iou
 from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
 import lpips
+
 
 def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
     # to be used only on mri images with intensities between 0 and 1
@@ -212,7 +214,6 @@ def _run_patchwise_test(
 
     return stitched_pred
 
-
 def launch_compute_metrics_reconstruction(args):
     """
     Computes reconstruction metrics on the test_reconstruction set and visualize some results
@@ -270,11 +271,6 @@ def launch_compute_metrics_reconstruction(args):
 
     #test_unhealthy_datalist = test_unhealthy_images_path
 
-    infer_patch_size = args.patch_size
-    patch_overlap = args.dataset["patch_overlap"]
-
-    patch_infer_batch_size = args.dataset["batch_size"]
-
     batch_size = args.dataset["batch_size"]
     num_workers = args.dataset["num_workers"]
 
@@ -293,10 +289,8 @@ def launch_compute_metrics_reconstruction(args):
     model.load_state_dict(torch.load(model_path, map_location=DEVICE_TYPE))
     model.eval()
 
-    simplexObj = None
 
     if args.noise["type"] == "simplex":
-        simplexObj = simplex.Simplex_CLASS()
         infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], 
                                                             schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], 
                                                             persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
@@ -305,7 +299,45 @@ def launch_compute_metrics_reconstruction(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
 
+    @torch.no_grad()
+    def my_sample(image, infer_scheduler, timesteps, return_intermediates=False):
+        
+        simplexObj = simplex.Simplex_CLASS()
 
+        if args.noise["type"] == "simplex":
+            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=args.noise["normalize"]).to(device)
+        if args.noise["type"] == "gaussian":
+            noise = torch.randn(image.shape).to(device)
+        
+
+        if timesteps >= infer_scheduler.num_train_timesteps:
+            tprint(f"{timesteps} is too high. Setting to {infer_scheduler.num_train_timesteps-1}")
+
+        timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
+
+        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
+
+
+        intermediates = []
+        intermediates_step = 20
+
+                
+        for t in range(timesteps, 0, -1): # va de timesteps à 0
+            
+            model_output = model(
+                image, timesteps=torch.Tensor((t,)).to(device), context=None
+            )
+            #print(model_output.shape)
+            
+            image, _ = infer_scheduler.step(model_output, t, image)
+        
+            if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
+                intermediates.append(image)
+
+        if return_intermediates:
+            return image, intermediates
+        else:
+            return image
 
     # ----------- COMPUTING METRICS -----------
 
@@ -316,53 +348,49 @@ def launch_compute_metrics_reconstruction(args):
     mse = {noise: [] for noise in NOISE_RANGE} # for each noise level there is a list of mse values
     psnr = {noise: [] for noise in NOISE_RANGE}
     ssim = {noise: [] for noise in NOISE_RANGE}
-    #lpips_dict = {noise: [] for noise in NOISE_RANGE}
+    lpips_dict = {noise: [] for noise in NOISE_RANGE}
 
-    #loss_fn_lpips = lpips.LPIPS(net='alex').to(device) # Higher means further/more different. Lower means more similar.
+    loss_fn_lpips = lpips.LPIPS(net='alex').to(device) # Higher means further/more different. Lower means more similar.
 
     full_volume_test = False
 
-    for i, image_batch in tqdm(enumerate(test_reconstruction_loader)):
+    for image_batch in tqdm(test_reconstruction_loader):
 
         test_reconstruction_images = image_batch.to(device)
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
-            with torch.no_grad():
 
-                for i, noise_timesteps in enumerate(NOISE_RANGE):
+            for i, noise_timesteps in enumerate(NOISE_RANGE):
 
-                    test_reconstruction_images = test_reconstruction_images[..., args.slice_indexes_start:args.slice_indexes_end]
+                #print(f"inference for {noise_timesteps} noise timesteps")
+                
+                if len(image_batch.shape)==4: # 2D slices
                     
-                    volumes = test_reconstruction_images.shape[0]
+                    infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                    infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
 
-                    for idx in range(volumes): 
-
-                        volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
-                        volume = volume.to(device)
-                        
-                        stitched_pred = _run_patchwise_test(
-                            volume,
-                            infer_patch_size,
-                            patch_overlap,
-                            patch_infer_batch_size,
-                            args.noise["type"],
-                            simplexObj,
-                            model,
-                            infer_scheduler,
-                            noise_timesteps,
-                            device,
-                        )
-                    infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
-                    
                     mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
-                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
+                    ssim[noise_timesteps].append(np.mean(ssim_metric(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
                     psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
-                    #lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
-        
-        tprint(f"Processed batch {i} of test reconstruction data.")
-        tprint(f"Total processed volumes: {i * test_reconstruction_images.shape[0]}.")
-        for noise_timesteps in NOISE_RANGE:
-            tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
+                    lpips_dict[noise_timesteps].append(np.mean(loss_fn_lpips.forward(infered.to(device), test_reconstruction_images).detach().cpu().numpy().flatten()))
+
+                elif len(image_batch.shape)==5: # full volumes by slices
+                    full_volume_test = True
+                    infered_slices = []
+                    lpips_volume = [] 
+
+                    for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
+                        infered_slice = my_sample(test_reconstruction_images[...,slice_idx], infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                        lpips_volume.append(np.mean(loss_fn_lpips.forward(infered_slice.to(device), test_reconstruction_images[...,slice_idx]).detach().cpu().numpy().flatten())) # since lpips only works for 2D images
+                        infered_slices.append(infered_slice.unsqueeze(-1))
+
+                    infered = torch.cat(infered_slices, dim=-1)
+                    infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
+                    
+                    mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten())
+                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end], infered).detach().cpu().numpy().flatten()))
+                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten()))
+                    lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
@@ -372,7 +400,10 @@ def launch_compute_metrics_reconstruction(args):
     for i,(image_batch) in enumerate(test_reconstruction_loader):
         if i>0:break
 
-        test_reconstruction_images = image_batch[...,image_batch.shape[-1]//2].to(device) # visualize the slice in the middle of the volume
+        if len(image_batch.shape)==4: # 2D slices
+            test_reconstruction_images = image_batch.to(device)
+        elif len(image_batch.shape)==5: # full volumes
+            test_reconstruction_images = image_batch[...,image_batch.shape[-1]//2].to(device) # visualize the slice in the middle of the volume
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
@@ -411,14 +442,26 @@ def launch_compute_metrics_reconstruction(args):
         first_noisy_image_no_background[original_image < 0.01] = 0.0
         
 
-        #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
-        axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
-        axes[1, idx*2].axis('off')
+        
 
-        axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
-        axes[1, idx*2+1].set_ylim(0, 2000)
-        axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        if args.noise["normalize"]:
+            #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].axis('off')
+
+            axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+            axes[1, idx*2+1].set_ylim(0, 2000)
+            axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        else:
+            #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
+            axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].axis('off')
+
+            axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
+            axes[1, idx*2+1].set_ylim(0, 2000)
+            axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
 
 
         # Inferred images
