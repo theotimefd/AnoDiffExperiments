@@ -9,6 +9,7 @@ from train_ddpm_full_volume import launch_train_full_volume
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
+from anomaly_detection_inference import launch_anomaly_detection_inference
 
 from utils.utils import tprint
 
@@ -66,13 +67,13 @@ def main():
             tprint("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)
         
-        if step=="compute_metrics_anomaly_detection_rework" and rank==0:
-            tprint("Launching compute_metrics_anomaly_detection_rework")
-            launch_compute_metrics_anomaly_detection_rework(args)
-        
         if step=="compute_metrics_thor_anomaly_detection" and rank==0:
             tprint("Launching compute_metrics_thor_anomaly_detection")
             launch_compute_metrics_thor_anomaly_detection(args)
+        
+        if step=="anomaly_detection_inference" and rank==0:
+            tprint("Launching anomaly_detection_inference")
+            launch_anomaly_detection_inference(args)
         
 
 
