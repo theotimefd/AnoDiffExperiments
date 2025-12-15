@@ -449,17 +449,11 @@ def launch_train_patch(args):
     model = define_instance(args, "network_def").to(device)
     last_epoch = 0
     if args.diffusion_train.get("resume_checkpoint", False) == True:
+    
         last_epoch = args.diffusion_train.get("last_checkpoint_epoch", None)
-        if last_epoch is not None:
-            checkpoint_path = os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_best_model.pth")
-            if os.path.exists(checkpoint_path):
-                model.load_state_dict(torch.load(checkpoint_path, map_location="cuda:0")) # TODO this probably won't work when using torch DDP
-                tprint(f"Resumed model from checkpoint: {checkpoint_path} at epoch {last_epoch}")
-            else:
-                tprint(f"No checkpoint found at: {checkpoint_path}. Starting from scratch.")
-        else:
-            tprint("No last_checkpoint_epoch specified. Starting from scratch.")
-
+        
+        model.load_state_dict(torch.load(MODELS_DIR+f"{SUB_EXPERIMENT_NAME}_best_model.pth", map_location=f"cuda:{device}"))
+        
     simplexObj = None
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()

@@ -335,6 +335,8 @@ def launch_compute_metrics_reconstruction(args):
                     
                     volumes = test_reconstruction_images.shape[0]
 
+                    infered_batch = torch.zeros_like(test_reconstruction_images)
+
                     for idx in range(volumes): 
 
                         volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
@@ -353,10 +355,11 @@ def launch_compute_metrics_reconstruction(args):
                             device,
                         )
                     infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
+                    infered_batch[idx : idx + 1] = infered
                     
-                    mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
-                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images, infered).detach().cpu().numpy().flatten()))
-                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images).detach().cpu().numpy().flatten()))
+                    mse[noise_timesteps].append(F.mse_loss(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
+                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten()))
+                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten()))
                     #lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
         
         tprint(f"Processed batch {i} of test reconstruction data.")
