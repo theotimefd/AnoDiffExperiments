@@ -344,7 +344,7 @@ def launch_train_diffusion(args):
                             tprint(f"Save trained latent diffusion model to {trained_diffusion_path}")
 
                         # visualize synthesized image
-                        if (epoch) % (50 * val_interval) == 0:  # time cost of synthesizing images is large
+                        if (epoch) % (10 * val_interval) == 0:  # time cost of synthesizing images is large
                             synthetic_images = inferer.sample(
                                 input_noise=noise[0:1, ...],
                                 autoencoder_model=inferer_autoencoder,

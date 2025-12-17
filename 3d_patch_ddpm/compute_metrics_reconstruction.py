@@ -232,6 +232,8 @@ def launch_compute_metrics_reconstruction(args):
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_healthy_reconstruction/" # final anomaly maps with best params
+    os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
     IMAGE_SIZE = args.image_size
 
@@ -243,7 +245,8 @@ def launch_compute_metrics_reconstruction(args):
 
     NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
     NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    #NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_RANGE = range(NOISE_MAX,NOISE_MIN,-args.compute_metrics_reconstruction["noise_timesteps_interval"]) # reverse to see more noisy images first
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -326,14 +329,14 @@ def launch_compute_metrics_reconstruction(args):
 
         test_reconstruction_images = image_batch.to(device)
 
+        test_reconstruction_images = test_reconstruction_images[..., args.slice_indexes_start:args.slice_indexes_end]
+                    
+        volumes = test_reconstruction_images.shape[0]
+
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             with torch.no_grad():
 
-                for i, noise_timesteps in enumerate(NOISE_RANGE):
-
-                    test_reconstruction_images = test_reconstruction_images[..., args.slice_indexes_start:args.slice_indexes_end]
-                    
-                    volumes = test_reconstruction_images.shape[0]
+                for n, noise_timesteps in enumerate(NOISE_RANGE):                
 
                     infered_batch = torch.zeros_like(test_reconstruction_images)
 
@@ -354,19 +357,33 @@ def launch_compute_metrics_reconstruction(args):
                             noise_timesteps,
                             device,
                         )
-                    infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
-                    infered_batch[idx : idx + 1] = infered
+                        infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
+                        infered_batch[idx : idx + 1] = infered
+
+                        # save the anomaly map (raw, no absolute value) if noise_timesteps==100 for adc or 150 for flair
+                        if ("adc" in args.dataset["name"] and noise_timesteps == 100) or ("flair" in args.dataset["name"] and noise_timesteps == 150):
+                            # Convert to numpy and save as NIfTI
+                            anomaly_map_np = (infered - volume).cpu().numpy().squeeze()
+                            anomaly_map_nifti = nib.Nifti1Image(anomaly_map_np, affine=np.eye(4))
+                            patient_id = os.path.basename(test_reconstruction_datalist[i*batch_size+idx]).split('.')[0]
+                            anomaly_map_path = os.path.join(ANOMALY_MAPS_DIR, f"anomaly_map_noise_{noise_timesteps}_{patient_id}.nii.gz")
+                            nib.save(anomaly_map_nifti, anomaly_map_path)
                     
                     mse[noise_timesteps].append(F.mse_loss(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
-                    ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten()))
-                    psnr[noise_timesteps].append(np.mean(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten()))
+                    #tprint(f"ssim for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data: {ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten()}")
+                    #tprint(f"batch size: {test_reconstruction_images.shape[0]}")
+                    ssim[noise_timesteps].append(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten())
+                    psnr[noise_timesteps].append(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
+                    tprint(f"Computed metrics for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data.")
+
+
                     #lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
         
         tprint(f"Processed batch {i} of test reconstruction data.")
         tprint(f"Total processed volumes: {i * test_reconstruction_images.shape[0]}.")
         for noise_timesteps in NOISE_RANGE:
             tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
-
+        
 
     # ----------- VISUALIZATION OF A BATCH -----------
     infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
