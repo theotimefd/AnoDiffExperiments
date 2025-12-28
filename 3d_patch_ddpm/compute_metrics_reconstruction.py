@@ -284,7 +284,7 @@ def launch_compute_metrics_reconstruction(args):
 
     # transforms
     test_reconstruction_transforms = define_instance(args, "val_transforms")
-    test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
+    test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist[:batch_size], transform=test_reconstruction_transforms) #TODO i took only one batch (64 otherwise its way too long (>24h))
 
 
     test_reconstruction_loader = DataLoader(
@@ -361,7 +361,7 @@ def launch_compute_metrics_reconstruction(args):
                         infered_batch[idx : idx + 1] = infered
 
                         # save the anomaly map (raw, no absolute value) if noise_timesteps==100 for adc or 150 for flair
-                        if ("adc" in args.dataset["name"] and noise_timesteps == 100) or ("flair" in args.dataset["name"] and noise_timesteps == 150):
+                        if ("adc" in args.dataset["name"] and noise_timesteps == 101) or ("flair" in args.dataset["name"] and noise_timesteps == 151):
                             # Convert to numpy and save as NIfTI
                             anomaly_map_np = (infered - volume).cpu().numpy().squeeze()
                             anomaly_map_nifti = nib.Nifti1Image(anomaly_map_np, affine=np.eye(4))
@@ -380,7 +380,7 @@ def launch_compute_metrics_reconstruction(args):
                     #lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
         
         tprint(f"Processed batch {i} of test reconstruction data.")
-        tprint(f"Total processed volumes: {i * test_reconstruction_images.shape[0]}.")
+        tprint(f"Total processed volumes: {(i+1) * test_reconstruction_images.shape[0]}.")
         for noise_timesteps in NOISE_RANGE:
             tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
         
@@ -392,12 +392,28 @@ def launch_compute_metrics_reconstruction(args):
     for i,(image_batch) in enumerate(test_reconstruction_loader):
         if i>0:break
 
-        test_reconstruction_images = image_batch[...,image_batch.shape[-1]//2].to(device) # visualize the slice in the middle of the volume
+        test_reconstruction_images = image_batch.to(device)
+        infered_batch = torch.zeros_like(test_reconstruction_images)
 
-        with autocast(device_type=DEVICE_TYPE, enabled=True):
+        for idx in range(volumes): 
 
-            infered, intermediates = my_sample(test_reconstruction_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=True)
-            first_noisy_images = intermediates[0]
+            volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
+            volume = volume.to(device)
+            
+            stitched_pred = _run_patchwise_test(
+                volume,
+                infer_patch_size,
+                patch_overlap,
+                patch_infer_batch_size,
+                args.noise["type"],
+                simplexObj,
+                model,
+                infer_scheduler,
+                infer_timesteps_visualize,
+                device,
+            )
+            infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
+            infered_batch[idx : idx + 1] = infered
 
     # ----------- PLOT -----------
     if not full_volume_test:
@@ -424,7 +440,7 @@ def launch_compute_metrics_reconstruction(args):
         axes[0, idx*2+1].set_ylim(0, 2000)
         axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
         
-        
+        """
         # First noisy images
 
         first_noisy_image_no_background = first_noisy_images[idx, 0].cpu().numpy().copy()
@@ -439,33 +455,35 @@ def launch_compute_metrics_reconstruction(args):
         axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        """
 
 
         # Inferred images
-        infered_image = infered[idx, 0].cpu().numpy()
-        axes[2, idx*2].imshow(infered_image, cmap='gray', vmin=0, vmax=1)
-        axes[2, idx*2].set_title(f'Inferred {idx+1}')
+        infered_batch = infered[idx, 0].cpu().numpy()
+        axes[1, idx*2].imshow(infered_batch, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].set_title(f'Inferred {idx+1}')
+        axes[1, idx*2].axis('off')
+
+        axes[1, idx*2+1].hist(infered_batch[infered_batch>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].set_ylim(0, 2000)
+        axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        # Difference images
+        axes[2, idx*2].imshow(np.abs(infered_batch-original_image), cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].set_title(f'Difference {idx+1}')
         axes[2, idx*2].axis('off')
 
-        axes[2, idx*2+1].hist(infered_image[infered_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[2, idx*2+1].hist(np.abs(infered_batch-original_image).flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[2, idx*2+1].set_ylim(0, 2000)
         axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
-        # Difference images
-        axes[3, idx*2].imshow(np.abs(infered_image-original_image), cmap='jet', vmin=0, vmax=1)
-        axes[3, idx*2].set_title(f'Difference {idx+1}')
-        axes[3, idx*2].axis('off')
-
-        axes[3, idx*2+1].hist(np.abs(infered_image-original_image).flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
-        axes[3, idx*2+1].set_ylim(0, 2000)
-        axes[3, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
-
         axes[0, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
+        #axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[1, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
         axes[2, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
-        axes[3, idx*2+1].set_box_aspect(1)  # Set the aspect ratio of the histogram subplot
 
         # Arrow from original image to noisy image
+        """
         axes[0, idx*2].annotate( 
             '', xy=(0.0, 128), xycoords=axes[0, idx*2].transData,
             xytext=(0.0, 0), textcoords=axes[1, idx*2].transData,
@@ -481,12 +499,13 @@ def launch_compute_metrics_reconstruction(args):
             -3, 165, text_metrics_orig_and_noisy, transform=axes[0, idx*2].transData, #TODO first_noisy_images[idx, 0])
             color='grey', fontsize=12, verticalalignment='center'
         )
+        """
 
 
         # Arrow from original image to infered image
         axes[0, idx*2].annotate(
             '', xy=(-5, 64), xycoords=axes[0, idx*2].transData, #'axes fraction',
-            xytext=(-5, 64), textcoords=axes[2, idx*2].transData,
+            xytext=(-5, 64), textcoords=axes[1, idx*2].transData,
             arrowprops=dict(arrowstyle="<->", color='grey', lw=2, connectionstyle="arc3, rad=-0.07")
         )
 
@@ -565,7 +584,7 @@ def launch_compute_metrics_reconstruction(args):
     gs = axes[4, 2].get_gridspec()
     axbig4 = fig.add_subplot(gs[4, 6:8])
 
-    # LPIPS plot
+    """# LPIPS plot
     axbig4.errorbar(
         [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
         [np.mean(lpips_dict[noise]) for noise in NOISE_RANGE],
@@ -576,7 +595,7 @@ def launch_compute_metrics_reconstruction(args):
     axbig4.set_xlabel('Noise rate')
     axbig4.set_ylabel('LPIPS')
     axbig4.grid(True)
-    axbig4.legend()
+    axbig4.legend()"""
 
     # Add an empty row to create more whitespace for the figtext
     for idx in range(8):

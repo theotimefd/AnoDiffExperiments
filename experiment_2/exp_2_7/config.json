@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_7",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_ae", "train_diffusion"],
+    "pipeline": ["compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 8,
@@ -101,7 +101,7 @@
         "with_decoder_nonlocal_attn": false
     },
     "autoencoder_train": {
-        "batch_size": 2,
+        "batch_size": 4,
         "num_workers": 2,
         "perceptual_weight": 0.001,
         "kl_weight": 1e-7,
@@ -169,9 +169,9 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_rate_min": 0.15,
-        "noise_rate_max": 0.35,
-        "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.35
+        "noise_rate_min": 0.01,
+        "noise_rate_max": 0.1,
+        "noise_timesteps_interval": 10,
+        "noise_rate_visualize":0.03
     }
 }

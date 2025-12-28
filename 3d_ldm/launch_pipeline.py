@@ -7,6 +7,8 @@ from train_autoencoder import launch_train_autoencoder
 from train_diffusion import launch_train_diffusion
 from compute_metrics_reconstruction_ae import launch_compute_metrics_reconstruction_ae
 from compute_metrics_anomaly_detection_ae import launch_compute_metrics_anomaly_detection_ae
+from compute_metrics_reconstruction_diffusion import launch_compute_metrics_reconstruction_diffusion
+from compute_metrics_anomaly_detection_diffusion import launch_compute_metrics_anomaly_detection_diffusion
 
 
 def main():
@@ -63,6 +65,15 @@ def main():
         if step == "compute_metrics_anomaly_detection_ae" and rank == 0:
             print("Launching anomaly detection metrics computation for autoencoder")
             launch_compute_metrics_anomaly_detection_ae(args)
+
+        if step == "compute_metrics_reconstruction_diffusion" and rank == 0:
+            print("Launching reconstruction metrics computation for diffusion model")
+            launch_compute_metrics_reconstruction_diffusion(args)
+        
+        if step == "compute_metrics_anomaly_detection_diffusion" and rank == 0:
+            print("Launching anomaly detection metrics computation for diffusion model")
+            launch_compute_metrics_anomaly_detection_diffusion(args)
+            
         
             
     
