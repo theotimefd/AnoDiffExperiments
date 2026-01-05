@@ -196,7 +196,7 @@ def launch_compute_metrics_reconstruction_diffusion(args):
                 for noise_timesteps in NOISE_RANGE:      
                     # Add noise to latents
                     noise = torch.randn_like(latents).to(device)
-                    timesteps = torch.randint(0, scheduler.num_train_timesteps, (latents.shape[0],), device=device).long()
+                    timesteps = torch.randint(0, noise_timesteps, (latents.shape[0],), device=device).long()
                     noisy_latents = scheduler.add_noise(latents, noise, timesteps)
                     
                     # Denoise completely using the UNet
@@ -247,7 +247,7 @@ def launch_compute_metrics_reconstruction_diffusion(args):
                 latents = autoencoder.encode_stage_2_inputs(test_reconstruction_images)  
 
                 noise = torch.randn_like(latents).to(device)
-                timesteps = torch.randint(0, scheduler.num_train_timesteps, (latents.shape[0],), device=device).long()
+                timesteps = torch.randint(0, infer_timesteps_visualize, (latents.shape[0],), device=device).long()
                 noisy_latents = scheduler.add_noise(latents, noise, timesteps)
                 
                 # Denoise completely using the UNet

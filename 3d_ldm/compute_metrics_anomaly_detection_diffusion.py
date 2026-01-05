@@ -225,7 +225,7 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
 
     return iou_scores_df, dice_scores_df
 
-def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations):
+def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, infer_timesteps, threshold, median_filter_size, erosion_dilation_iterations):
         """
         input:
             image_loader: DataLoader for the anomaly images
@@ -285,14 +285,14 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_sch
 
                 # Add noise to latents
                 noise = torch.randn_like(latents).to(device)
-                timesteps = torch.randint(0, infer_scheduler.num_train_timesteps, (latents.shape[0],), device=device).long()
+                timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
                 noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
                 
                 # Denoise completely using the UNet
                 infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
                 current_latents = noisy_latents * scale_factor
                 
-                for t in tqdm(range(timesteps-1, -1, -1)):
+                for t in tqdm(range(infer_timesteps-1, -1, -1)):
                     noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
                     current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
                 
@@ -358,7 +358,7 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_sch
         return mean_iou, std_iou, mean_dice, std_dice
 
 
-def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_loader, mask_loader, timesteps, median_filter_size, threshold, erosion_dilation_iterations, metrics_result_text, ROOT_DIR, EXPERIMENT_NAME, SUB_EXPERIMENT_NAME):
+def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_loader, mask_loader, infer_timesteps, median_filter_size, threshold, erosion_dilation_iterations, metrics_result_text, ROOT_DIR, EXPERIMENT_NAME, SUB_EXPERIMENT_NAME):
 
     # Compute Scaling factor
     # As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM,
@@ -389,14 +389,14 @@ def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_
 
             # Add noise to latents
             noise = torch.randn_like(latents).to(device)
-            timesteps = torch.randint(0, infer_scheduler.num_train_timesteps, (latents.shape[0],), device=device).long()
+            timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
             noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
             
             # Denoise completely using the UNet
             infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
             current_latents = noisy_latents * scale_factor
             
-            for t in tqdm(range(timesteps-1, -1, -1)):
+            for t in tqdm(range(infer_timesteps-1, -1, -1)):
                 noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
                 current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
             
@@ -528,7 +528,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
 
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False #True
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
@@ -555,7 +555,8 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         ]
     )
     
-
+    num_workers = args.autoencoder_train["num_workers"]
+    ano_batch_size = args.autoencoder_train["batch_size"]
 
     # -------------------- define the data --------------------
 
@@ -575,8 +576,6 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         test_masks = [path for path in test_masks if os.path.basename(path) not in masks_to_exclude]
         #print(test_anomaly_images)
 
-        num_workers = 4
-        ano_batch_size = 32
 
         test_anomaly_transforms = define_instance(args, "val_transforms")
         test_anomaly_ds = CacheDataset(data=test_anomaly_images, transform=test_anomaly_transforms)
@@ -614,8 +613,6 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         small_group_flair_images = [ROOT_DIR+"datasets/final_flair_dataset_small/isles_registered/"+filename.replace("msk", "FLAIR") for filename in small_group]
         small_group_masks = [ROOT_DIR+"datasets/final_adc_dataset_small/ISLES_masks_registered/"+filename for filename in small_group]
 
-        num_workers = 4
-        ano_batch_size = 48 #TODO 32
 
         test_anomaly_transforms = define_instance(args, "val_transforms")
 
@@ -676,8 +673,6 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         test_anomaly_small_images = test_anomaly_small_images[:200] # Test set : SOOP: we only kept the first 200 small group images otherwis takes too much time
         small_group_masks = small_group_masks[:200] # Test set : SOOP: we only kept the first 200 small group images otherwis takes too much time
 
-        num_workers = 4
-        ano_batch_size = 64
 
         test_anomaly_large_ds = CacheDataset(data=test_anomaly_large_images, transform=test_anomaly_transforms)
         test_anomaly_medium_ds = CacheDataset(data=test_anomaly_medium_images, transform=test_anomaly_transforms)
@@ -763,7 +758,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
 
 
         num_workers = 4
-        small_ano_batch_size = 8
+        small_ano_batch_size = args.autoencoder_train["batch_size"]
 
 
         test_anomaly_large_ds = CacheDataset(data=test_anomaly_large_images, transform=test_anomaly_transforms)
@@ -997,7 +992,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            make_anomaly_maps(args, autoencoder, unet, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1008,7 +1003,9 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+        tprint(f"Best params large group: {best_params}")
+
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
         metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1023,7 +1020,8 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         if args.show_summary_figures:
             show_summary_figure(args, 
                                 device, 
-                                model, 
+                                autoencoder,
+                                unet, 
                                 infer_scheduler, 
                                 test_anomaly_large_loader_metrics, 
                                 test_masks_large_loader_metrics, 
@@ -1039,7 +1037,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
 
         # --------------------------------- medium group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            make_anomaly_maps(args, autoencoder, unet, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
         
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1050,7 +1048,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1064,7 +1062,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
 
         # --------------------------------- small group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+            make_anomaly_maps(args, autoencoder, unet, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
         
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1076,7 +1074,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         best_params = iou_scores_df_small_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1092,7 +1090,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+            make_anomaly_maps(args, autoencoder, unet, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params_small), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1103,7 +1101,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images, test_masks_large_loader_metrics_small, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images, test_masks_large_loader_metrics_small, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text = f"soop_fast: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1120,7 +1118,8 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         if args.show_summary_figures:
             show_summary_figure(args, 
                                 device, 
-                                model, 
+                                autoencoder, 
+                                unet, 
                                 infer_scheduler, 
                                 test_anomaly_large_loader_metrics_small, 
                                 test_masks_large_loader_metrics_small, 

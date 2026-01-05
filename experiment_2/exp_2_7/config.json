@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_7",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
+    "pipeline": ["compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 8,
@@ -67,7 +67,7 @@
         ]
     },
     "noise": {
-        "type": "simplex",
+        "type": "gaussian",
         "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
