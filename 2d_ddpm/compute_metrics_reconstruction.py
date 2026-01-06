@@ -231,6 +231,7 @@ def launch_compute_metrics_reconstruction(args):
                     infered = torch.cat(infered_slices, dim=-1)
                     infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
                     
+                    #TODO here we shouldn't use mean, should instead put all the values inside the list and only call average once at the end
                     mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten())
                     ssim[noise_timesteps].append(np.mean(ssim_metric_3d(test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end], infered).detach().cpu().numpy().flatten()))
                     psnr[noise_timesteps].append(np.mean(psnr_metric(infered, test_reconstruction_images[...,args.slice_indexes_start:args.slice_indexes_end]).detach().cpu().numpy().flatten()))

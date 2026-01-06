@@ -6,7 +6,7 @@
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
-    "root_dir":"/home/fehrdelt/bettik/",
+    "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_adc_dataset_small_added_ixi",
         "test": "soop",

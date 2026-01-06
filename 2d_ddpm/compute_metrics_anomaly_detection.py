@@ -257,7 +257,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
         #tprint(f"len(image_loader.dataset)={len(image_loader.dataset)}")
         #tprint(f"len(mask_loader.dataset)={len(mask_loader.dataset)}")
        # for every batch
-        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): 
 
             test_images = image_batch.to(device)
             test_masks = mask_batch.to(device)
@@ -1044,3 +1044,4 @@ def launch_compute_metrics_anomaly_detection(args):
                                 EXPERIMENT_NAME=EXPERIMENT_NAME,
                                 SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
                                 )
+        

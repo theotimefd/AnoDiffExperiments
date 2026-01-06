@@ -278,45 +278,45 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_sch
             test_masks[test_masks>0.5] = 1.0
             test_masks[test_masks<=0.5] = 0.0
 
+            with torch.no_grad():
+                with autocast(device_type=DEVICE_TYPE, enabled=True):
+                    
+                    latents = autoencoder.encode_stage_2_inputs(test_images)    
 
-            with autocast(device_type=DEVICE_TYPE, enabled=True):
-                
-                latents = autoencoder.encode_stage_2_inputs(test_images)    
+                    # Add noise to latents
+                    noise = torch.randn_like(latents).to(device)
+                    timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
+                    noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
+                    
+                    # Denoise completely using the UNet
+                    infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
+                    current_latents = noisy_latents * scale_factor
+                    
+                    for t in tqdm(range(infer_timesteps-1, -1, -1)):
+                        noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
+                        current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
+                    
+                    # Decode the denoised latents
+                    current_latents = current_latents / scale_factor
 
-                # Add noise to latents
-                noise = torch.randn_like(latents).to(device)
-                timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
-                noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
-                
-                # Denoise completely using the UNet
-                infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
-                current_latents = noisy_latents * scale_factor
-                
-                for t in tqdm(range(infer_timesteps-1, -1, -1)):
-                    noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
-                    current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
-                
-                # Decode the denoised latents
-                current_latents = current_latents / scale_factor
+                    reconstructed_images = autoencoder.decode(current_latents)
+                    normalized_reconstructed_images = scale_intensity_from_histogram_peak(reconstructed_images, target_value=2.0/7.0)
 
-                reconstructed_images = autoencoder.decode(current_latents)
-                normalized_reconstructed_images = scale_intensity_from_histogram_peak(reconstructed_images, target_value=2.0/7.0)
+                    # make the anomaly map (difference between infered and original)
+                    final_anomaly_map = torch.abs(normalized_reconstructed_images - test_images)
 
-                # make the anomaly map (difference between infered and original)
-                final_anomaly_map = torch.abs(normalized_reconstructed_images - test_images)
-
-                # apply median filter if specified
-                if median_filter_size is not None and median_filter_size > 0:
-                    final_anomaly_map_np = final_anomaly_map.cpu().numpy()
-                    for b in range(final_anomaly_map_np.shape[0]):
-                        final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
-                    final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
-                
-                if args.dataset["save_anomaly_maps"]:
-                    for idx_in_batch in range(final_anomaly_map.shape[0]):
-                        image_id = i*test_images.shape[0] + idx_in_batch
-                        image_name = os.path.basename(image_paths[image_id])
-                        nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
+                    # apply median filter if specified
+                    if median_filter_size is not None and median_filter_size > 0:
+                        final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                        for b in range(final_anomaly_map_np.shape[0]):
+                            final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+                        final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+                    
+                    if args.dataset["save_anomaly_maps"]:
+                        for idx_in_batch in range(final_anomaly_map.shape[0]):
+                            image_id = i*test_images.shape[0] + idx_in_batch
+                            image_name = os.path.basename(image_paths[image_id])
+                            nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
 
             #tprint(f"unprocessed anomaly map shape: {final_anomaly_map.shape}")
 
@@ -383,29 +383,32 @@ def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_
         test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
         test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
 
-        with autocast(device_type=DEVICE_TYPE, enabled=True):
+        with torch.no_grad():
+            with autocast(device_type=DEVICE_TYPE, enabled=True):
 
-            latents = autoencoder.encode_stage_2_inputs(test_anomaly_images)    
+                latents = autoencoder.encode_stage_2_inputs(image_batch.to(device))    
 
-            # Add noise to latents
-            noise = torch.randn_like(latents).to(device)
-            timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
-            noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
-            
-            # Denoise completely using the UNet
-            infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
-            current_latents = noisy_latents * scale_factor
-            
-            for t in tqdm(range(infer_timesteps-1, -1, -1)):
-                noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
-                current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
-            
-            # Decode the denoised latents
-            current_latents = current_latents / scale_factor
+                # Add noise to latents
+                noise = torch.randn_like(latents).to(device)
+                timesteps = torch.randint(0, infer_timesteps, (latents.shape[0],), device=device).long()
+                noisy_latents = infer_scheduler.add_noise(latents, noise, timesteps)
+                
+                # Denoise completely using the UNet
+                infer_scheduler.set_timesteps(infer_scheduler.num_train_timesteps)
+                current_latents = noisy_latents * scale_factor
+                
+                for t in tqdm(range(infer_timesteps-1, -1, -1)):
+                    noise_pred = unet(current_latents, timesteps=torch.tensor([t], device=device).expand(latents.shape[0]))
+                    current_latents, _ = infer_scheduler.step(noise_pred, t, current_latents)
+                
+                # Decode the denoised latents
+                current_latents = current_latents / scale_factor
 
-            infered_image = autoencoder.decode(current_latents)
+                infered_image = autoencoder.decode(current_latents)
 
-            infered_image = torch.clamp(scale_intensity_from_histogram_peak(infered_image, 2.0/7.0), 0.0, 1.0)
+                for volume in range(infered_image.shape[0]):
+                    infered_image[volume] = torch.clamp(scale_intensity_from_histogram_peak(infered_image[volume:volume+1], 2.0/7.0), 0.0, 1.0)
+                #infered_image = torch.clamp(scale_intensity_from_histogram_peak(infered_image, 2.0/7.0), 0.0, 1.0)
         
         
 
@@ -430,18 +433,19 @@ def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_
 
         # 3x average inferred images
         #print(infered_image.shape)
-        infered_image_cpu = infered_image[idx, 0].cpu().numpy()
+        infered_image_slice = infered_image[idx, 0].cpu().numpy()
+        infered_image_slice = infered_image_slice[..., infered_image_slice.shape[-1]//2]
         
-        axes[1, idx*2].imshow(infered_image_cpu, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].imshow(infered_image_slice, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(infered_image_cpu[infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(infered_image_slice[infered_image_slice>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # Difference images
-        difference_image = np.abs(original_image - infered_image_cpu)
+        difference_image = np.abs(original_image - infered_image_slice)
         # apply median filter if specified
         if median_filter_size is not None and median_filter_size > 0:
             final_anomaly_map_np = difference_image
@@ -492,17 +496,13 @@ def show_summary_figure(args, device, autoencoder, unet, infer_scheduler, image_
     for idx in range(8):
         axes[5, idx].axis('off')
     # Add overall title with metric results
-    if args.spatial_dims_val_test == 2:
-        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
-    elif args.spatial_dims_val_test == 3:
-        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
+
+    plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, LDM 3D volumes", fontsize=16)
 
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
 
-    if args.spatial_dims_val_test == 2:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
-    if args.spatial_dims_val_test == 3:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
+
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_ldm_3d_volumes.png", transparent=False, dpi=150)
 
 
 def launch_compute_metrics_anomaly_detection_diffusion(args):
@@ -892,12 +892,16 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                             )
 
     if args.dataset["test"] == "isles": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
-        print("WARNING ISLES test is still not completely implemented")
+        tprint("WARNING ISLES test is still not completely implemented")
         for timesteps in num_timesteps_to_try:
 
             # --------------------------------- large group
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
-            
+        
+        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
+        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
+        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
+
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/TODO/TODO/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
         iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_large_group.csv", index=False)
@@ -994,6 +998,10 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         for timesteps in num_timesteps_to_try:       
             make_anomaly_maps(args, autoencoder, unet, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
 
+        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
+        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
+        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
+
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
         iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_large_group.csv", index=False)
@@ -1025,7 +1033,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                 infer_scheduler, 
                                 test_anomaly_large_loader_metrics, 
                                 test_masks_large_loader_metrics, 
-                                timesteps=best_num_timesteps_large_group, 
+                                infer_timesteps=best_num_timesteps_large_group, 
                                 median_filter_size=best_median_filter_size_large_group, 
                                 threshold=best_threshold_large_group, 
                                 erosion_dilation_iterations=best_erosion_dilation_iterations_large_group,

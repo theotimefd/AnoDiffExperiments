@@ -10,8 +10,10 @@
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_adc_dataset_small_added_ixi",
-        "test": "soop"
+        "test": "soop",
+        "save_anomaly_maps": true
     },
+    "show_summary_figures": true,
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
         "transforms": [

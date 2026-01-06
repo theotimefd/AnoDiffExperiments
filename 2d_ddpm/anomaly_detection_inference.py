@@ -105,7 +105,11 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
 
                 # stack the slices back to a 3D volume
                 average_infered_image = torch.cat(infered_slices, dim=-1)
-                average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
+
+                # normalize the intensity based on histogram peak for each volume individually
+                for volume in range(average_infered_image.shape[0]):
+                    average_infered_image[volume] = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image[volume], 2.0/7.0), 0.0, 1.0)
+                #average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
                 # make the anomaly map (difference between infered and original)
                 final_anomaly_map = torch.zeros_like(test_images)
@@ -367,6 +371,7 @@ def launch_anomaly_detection_inference(args):
             best_threshold_large_group=0.04
             best_erosion_dilation_iterations_large_group=2
         
+        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
 
         mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images[len(test_anomaly_large_images)//2:], test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
