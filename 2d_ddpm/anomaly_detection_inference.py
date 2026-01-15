@@ -53,7 +53,7 @@ import multiprocessing as mp
 DEVICE_TYPE = "cuda:0"
 
 
-def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations):
+def inference(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations, no_abs_value=False):
         """
         input:
             image_loader: DataLoader for the anomaly images
@@ -113,7 +113,10 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
 
                 # make the anomaly map (difference between infered and original)
                 final_anomaly_map = torch.zeros_like(test_images)
-                final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
+                if no_abs_value:
+                    final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end]
+                else:
+                    final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
 
                 # apply median filter if specified
                 if median_filter_size is not None and median_filter_size > 0:
@@ -175,7 +178,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
         return mean_iou, std_iou, mean_dice, std_dice
 
 
-def launch_anomaly_detection_inference(args):
+def launch_anomaly_detection_inference(args, no_abs_value=False):
     # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
     # The second 50% is used to compute the final IOU and DICE metrics with these best values.
     DEVICE_TYPE = "cuda:0"
@@ -371,10 +374,14 @@ def launch_anomaly_detection_inference(args):
             best_threshold_large_group=0.04
             best_erosion_dilation_iterations_large_group=2
         
-        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
+        
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images[len(test_anomaly_large_images)//2:], test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
-
+        if no_abs_value:
+            os.makedirs(ANOMALY_MAPS_DIR+"large_no_abs_value/", exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, ANOMALY_MAPS_DIR+"large_no_abs_value/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images[len(test_anomaly_large_images)//2:], test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
+        else:
+            os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images[len(test_anomaly_large_images)//2:], test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
         
         metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
@@ -384,4 +391,91 @@ def launch_anomaly_detection_inference(args):
         metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
         metrics_result_text += "\n"
         tprint(metrics_result_text)
+    
+    if args.dataset["test"] == "healthy_test_set":
+
+        if "flair" in args.dataset["name"].lower():
+            best_num_timesteps_large_group = 100
+            best_median_filter_size_large_group=5
+            best_threshold_large_group=0.06
+            best_erosion_dilation_iterations_large_group=2
+
+            test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/final_flair_dataset_small_added_oasis/test.csv")
+            test_reconstruction_images_path = []
+
+            with open(test_reconstruction_csv, mode='r') as file:
+                reader = csv.reader(file)
+                for line in tqdm(reader):
+                    #print(line)
+                    test_reconstruction_images_path.append(ROOT_DIR+line[0])
+
+            #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
+            test_reconstruction_datalist = test_reconstruction_images_path
+
+            #test_unhealthy_datalist = test_unhealthy_images_path
+
+            batch_size = args.dataset["batch_size"]
+            num_workers = args.dataset["num_workers"]
+
+
+            # transforms
+            test_reconstruction_transforms = define_instance(args, "val_transforms")
+            test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
+
+
+            test_reconstruction_loader = DataLoader(
+                test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            )
+
+
+        elif "adc" in args.dataset["name"].lower():
+            best_num_timesteps_large_group = 150
+            best_median_filter_size_large_group=5
+            best_threshold_large_group=0.04
+            best_erosion_dilation_iterations_large_group=2
         
+            test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/final_adc_dataset_small_added_ixi/test.csv")
+            test_reconstruction_images_path = []
+
+            with open(test_reconstruction_csv, mode='r') as file:
+                reader = csv.reader(file)
+                for line in tqdm(reader):
+                    #print(line)
+                    test_reconstruction_images_path.append(ROOT_DIR+line[0])
+
+            #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
+            test_reconstruction_datalist = test_reconstruction_images_path
+
+            #test_unhealthy_datalist = test_unhealthy_images_path
+
+            batch_size = args.dataset["batch_size"]
+            num_workers = args.dataset["num_workers"]
+
+
+            # transforms
+            test_reconstruction_transforms = define_instance(args, "val_transforms")
+            test_reconstruction_ds = CacheDataset(data=test_reconstruction_datalist, transform=test_reconstruction_transforms)
+
+
+            test_reconstruction_loader = DataLoader(
+                test_reconstruction_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            )
+        
+
+        if no_abs_value:
+            dir_name = ANOMALY_MAPS_DIR+"healthy_test_set_no_abs_value/"
+            os.makedirs(dir_name, exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, dir_name, infer_scheduler, test_reconstruction_loader, test_reconstruction_datalist, None, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
+        else:
+            dir_name = ANOMALY_MAPS_DIR+"healthy_test_set/"
+            os.makedirs(dir_name, exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, dir_name, infer_scheduler, test_reconstruction_loader, test_reconstruction_datalist, None, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
+        
+        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)

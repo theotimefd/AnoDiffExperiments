@@ -1,8 +1,8 @@
 {
     "experiment_name": "experiment_2",
-    "sub_experiment_name": "exp_2_7",
+    "sub_experiment_name": "exp_2_8",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
+    "pipeline": ["train_diffusion", "compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 8,
@@ -88,14 +88,18 @@
         "latent_channels": "@latent_channels",
         "channels": [
             64,
-            128
+            128,
+            256,
+            512
         ],
         "num_res_blocks": 2,
         "norm_num_groups": 32,
         "norm_eps": 1e-06,
         "attention_levels": [
             false,
-            false
+            false,
+            false,
+            true
         ],
         "with_encoder_nonlocal_attn": false,
         "with_decoder_nonlocal_attn": false

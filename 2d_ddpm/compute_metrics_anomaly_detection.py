@@ -256,7 +256,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
         #tprint(f"launching comute metrics with timesteps={timesteps}, threshold={threshold}, median_filter_size={median_filter_size}, erosion_dilation_iterations={erosion_dilation_iterations}")
         #tprint(f"len(image_loader.dataset)={len(image_loader.dataset)}")
         #tprint(f"len(mask_loader.dataset)={len(mask_loader.dataset)}")
-       # for every batch
+        #for every batch
         for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): 
 
             test_images = image_batch.to(device)

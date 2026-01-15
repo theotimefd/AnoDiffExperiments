@@ -1,14 +1,14 @@
 {
-    "experiment_name": "experiment_2",
-    "sub_experiment_name": "exp_2_4",
-    "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["train_ddpm"],
+    "experiment_name": "experiment_3",
+    "sub_experiment_name": "exp_3_4",
+    "description": "3D patch DDPM on flair with simplex noise",
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_adc_dataset_small_added_ixi",
+        "name": "final_flair_dataset_small_added_oasis",
         "test": "soop",
         "save_anomaly_maps":false,
         "batch_size": 64,
@@ -100,7 +100,7 @@
         "use_flash_attention":true
     },
     "diffusion_train": {
-        "max_epochs": 6000,
+        "max_epochs": 350,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",
@@ -108,7 +108,9 @@
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
-        "ema":false
+        "ema":false,
+        "resume_checkpoint": true,
+        "last_checkpoint_epoch": 210
     },
     "compute_metrics_reconstruction":{
         "transforms": {

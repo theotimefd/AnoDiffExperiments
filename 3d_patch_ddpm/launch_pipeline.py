@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from train_3d_ddpm_patch import launch_train_patch
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
-#from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
+from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 #from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
 
 def main():
@@ -53,11 +53,11 @@ def main():
             print("Launching compute_metrics_reconstruction")
             launch_compute_metrics_reconstruction(args)
         
-        """
+        
         if step=="compute_metrics_anomaly_detection" and rank==0:
             print("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)
-        
+        """
         if step=="compute_metrics_thor_anomaly_detection" and rank==0:
             print("Launching compute_metrics_thor_anomaly_detection")
             launch_compute_metrics_thor_anomaly_detection(args)

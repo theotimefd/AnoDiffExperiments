@@ -232,8 +232,6 @@ def launch_compute_metrics_reconstruction(args):
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_healthy_reconstruction/" # final anomaly maps with best params
-    os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
     IMAGE_SIZE = args.image_size
 
@@ -309,6 +307,12 @@ def launch_compute_metrics_reconstruction(args):
 
 
 
+    for n, noise_timesteps in enumerate(NOISE_RANGE):
+        os.makedirs(ROOT_DIR+f"datasets/{SUB_EXPERIMENT_NAME}/noise_{noise_timesteps}", exist_ok=True)
+
+
+    # first we save all the reconstructed images for each noise level
+    # then we compute the metrics on them
 
     # ----------- COMPUTING METRICS -----------
 
@@ -323,24 +327,29 @@ def launch_compute_metrics_reconstruction(args):
 
     #loss_fn_lpips = lpips.LPIPS(net='alex').to(device) # Higher means further/more different. Lower means more similar.
 
-    full_volume_test = False
 
     for i, image_batch in tqdm(enumerate(test_reconstruction_loader)):
 
         test_reconstruction_images = image_batch.to(device)
 
-        test_reconstruction_images = test_reconstruction_images[..., args.slice_indexes_start:args.slice_indexes_end]
+        #test_reconstruction_images = test_reconstruction_images[..., args.slice_indexes_start:args.slice_indexes_end]
                     
         volumes = test_reconstruction_images.shape[0]
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             with torch.no_grad():
 
-                for n, noise_timesteps in enumerate(NOISE_RANGE):                
+                for n, noise_timesteps in enumerate(NOISE_RANGE):
 
                     infered_batch = torch.zeros_like(test_reconstruction_images)
 
                     for idx in range(volumes): 
+
+                        patient_id = os.path.basename(test_reconstruction_datalist[i*batch_size+idx]).split('.')[0]
+                        reconstructed_map_path = os.path.join(ROOT_DIR+f"datasets/{SUB_EXPERIMENT_NAME}/noise_{noise_timesteps}", f"reconstructed_image_{patient_id}.nii.gz")
+                        if os.path.exists(reconstructed_map_path):
+                            tprint(f"Reconstructed image for patient {patient_id} at noise timesteps {noise_timesteps} already exists, skipping inference.")
+                            continue
 
                         volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
                         volume = volume.to(device)
@@ -360,44 +369,58 @@ def launch_compute_metrics_reconstruction(args):
                         infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
                         infered_batch[idx : idx + 1] = infered
 
-                        # save the anomaly map (raw, no absolute value) if noise_timesteps==100 for adc or 150 for flair
-                        if ("adc" in args.dataset["name"] and noise_timesteps == 101) or ("flair" in args.dataset["name"] and noise_timesteps == 151):
-                            # Convert to numpy and save as NIfTI
-                            anomaly_map_np = (infered - volume).cpu().numpy().squeeze()
-                            anomaly_map_nifti = nib.Nifti1Image(anomaly_map_np, affine=np.eye(4))
-                            patient_id = os.path.basename(test_reconstruction_datalist[i*batch_size+idx]).split('.')[0]
-                            anomaly_map_path = os.path.join(ANOMALY_MAPS_DIR, f"anomaly_map_noise_{noise_timesteps}_{patient_id}.nii.gz")
-                            nib.save(anomaly_map_nifti, anomaly_map_path)
-                    
-                    mse[noise_timesteps].append(F.mse_loss(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
-                    #tprint(f"ssim for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data: {ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten()}")
-                    #tprint(f"batch size: {test_reconstruction_images.shape[0]}")
-                    ssim[noise_timesteps].append(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten())
-                    psnr[noise_timesteps].append(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
-                    tprint(f"Computed metrics for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data.")
+                        # save the reconstructed image
+                        # Convert to numpy and save as NIfTI
+                        reconstructed_nifti = nib.Nifti1Image(infered.cpu().numpy().squeeze(), affine=np.eye(4))
 
+                        
+                        nib.save(reconstructed_nifti, reconstructed_map_path)
+                
 
-                    #lpips_dict[noise_timesteps].append(np.mean(lpips_volume))
-        
+    # now compute the metrics for every image
+    for noise_timesteps in NOISE_RANGE:
+
+        for i, image_batch in tqdm(enumerate(test_reconstruction_loader)):
+            test_reconstruction_images = image_batch.to(device)
+            infered_batch = torch.zeros_like(test_reconstruction_images)
+
+            # load infered images from saved files
+            for idx in range(test_reconstruction_images.shape[0]): 
+                patient_id = os.path.basename(test_reconstruction_datalist[i*batch_size+idx]).split('.')[0]
+                reconstructed_map_path = os.path.join(ROOT_DIR+f"datasets/{SUB_EXPERIMENT_NAME}/noise_{noise_timesteps}", f"reconstructed_image_{patient_id}.nii.gz")
+                
+                # Load the reconstructed NIfTI file
+                reconstructed_nifti = nib.load(reconstructed_map_path)
+                reconstructed_data = reconstructed_nifti.get_fdata()
+
+                # Convert to torch tensor and assign to infered_batch
+                infered_batch[idx : idx + 1] = torch.from_numpy(reconstructed_data).unsqueeze(0).unsqueeze(0).to(device).float()
+
+            mse[noise_timesteps].append(F.mse_loss(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
+            ssim[noise_timesteps].append(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten())
+            psnr[noise_timesteps].append(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
+
+        tprint(f"Computed metrics for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data.")
         tprint(f"Processed batch {i} of test reconstruction data.")
         tprint(f"Total processed volumes: {(i+1) * test_reconstruction_images.shape[0]}.")
-        for noise_timesteps in NOISE_RANGE:
-            tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
-        
+
+
+        tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
+    
 
     # ----------- VISUALIZATION OF A BATCH -----------
     infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
 
-    for i,(image_batch) in enumerate(test_reconstruction_loader):
+    for i,(image_batch) in enumerate(test_reconstruction_loader): #TODO use less than 1 batch, only 4 images for visualization otherwise its too long
         if i>0:break
 
         test_reconstruction_images = image_batch.to(device)
         infered_batch = torch.zeros_like(test_reconstruction_images)
 
-        for idx in range(volumes): 
-
-            volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
+        for idx in range(min(4, batch_size)): # only visualize 4 images
+            
+            volume = test_reconstruction_images[idx : idx + 1] 
             volume = volume.to(device)
             
             stitched_pred = _run_patchwise_test(
@@ -416,10 +439,8 @@ def launch_compute_metrics_reconstruction(args):
             infered_batch[idx : idx + 1] = infered
 
     # ----------- PLOT -----------
-    if not full_volume_test:
-        metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size}), \n"
-    elif full_volume_test:
-        metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size}), full volume test\n"
+
+    metric_result_text = f"With ({NOISE_MIN},{NOISE_MAX}) timesteps noise range, on the whole test_reconstruction_dataset (n={batch_size}), \n"
     metric_result_text += f"Mean MSE ↓: {np.mean([np.mean(item) for sublist in mse.values() for item in sublist]):.3f}\n"
     metric_result_text += f"Mean PSNR ↑: {np.mean([np.mean(item) for sublist in psnr.values() for item in sublist]):.3f}\n"
     metric_result_text += f"Mean SSIM ↑: {np.mean([np.mean(item) for sublist in ssim.values() for item in sublist]):.3f}\n"
@@ -428,10 +449,10 @@ def launch_compute_metrics_reconstruction(args):
     fig, axes = plt.subplots(6, 8, figsize=(25, 25), constrained_layout=True)
     plt.tight_layout()
 
-    for idx in range(min(4, test_reconstruction_images.shape[0])):
+    for idx in range(min(4, test_reconstruction_images.shape[0])): #TODO
 
         # Original test_reconstruction images
-        original_image = test_reconstruction_images[idx, 0].cpu().numpy()
+        original_image = test_reconstruction_images[idx, 0][...,test_reconstruction_images.shape[-1]//2].cpu().numpy()
         axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
         axes[0, idx*2].set_title(f'Original {idx+1}')
         axes[0, idx*2].axis('off')
@@ -457,23 +478,23 @@ def launch_compute_metrics_reconstruction(args):
         axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
         """
 
-
+        
         # Inferred images
-        infered_batch = infered[idx, 0].cpu().numpy()
-        axes[1, idx*2].imshow(infered_batch, cmap='gray', vmin=0, vmax=1)
+        infered_img = infered_batch[idx, 0][...,infered_batch.shape[-1]//2].cpu().numpy()
+        axes[1, idx*2].imshow(infered_img, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(infered_batch[infered_batch>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(infered_img[infered_img>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # Difference images
-        axes[2, idx*2].imshow(np.abs(infered_batch-original_image), cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].imshow(np.abs(infered_img-original_image), cmap='jet', vmin=0, vmax=1)
         axes[2, idx*2].set_title(f'Difference {idx+1}')
         axes[2, idx*2].axis('off')
 
-        axes[2, idx*2+1].hist(np.abs(infered_batch-original_image).flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[2, idx*2+1].hist(np.abs(infered_img-original_image).flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[2, idx*2+1].set_ylim(0, 2000)
         axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
@@ -602,7 +623,7 @@ def launch_compute_metrics_reconstruction(args):
         axes[5, idx].axis('off')
 
 
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}", fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)

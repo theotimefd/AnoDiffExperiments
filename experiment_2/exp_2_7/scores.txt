@@ -1,0 +1,7 @@
+[06:29:15] Large group: mean IOU: 0.1049 std: 0.0467 - mean DICE 0.1868 std: 0.0738
+Best Number of Timesteps: 90 Best Median Filter Size: 5 Best Threshold: 0.0200 Best Erosion Dilation Iterations: 2
+Medium group: mean IOU: 0.0387 std: 0.0113 - mean DICE 0.0744 std: 0.0207
+Best Number of Timesteps: 80 Best Median Filter Size: 5 Best Threshold: 0.0200 Best Erosion Dilation Iterations: 2
+Small group: mean IOU: 0.0074 std: 0.0116 - mean DICE 0.0144 std: 0.0219
+Best Number of Timesteps: 70 Best Median Filter Size: 5 Best Threshold: 0.0400 Best Erosion Dilation Iterations: 2
+

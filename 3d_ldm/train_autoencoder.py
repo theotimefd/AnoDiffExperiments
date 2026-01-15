@@ -217,7 +217,7 @@ def launch_train_autoencoder(args):
     max_epochs = args.autoencoder_train["max_epochs"]
     val_interval = args.autoencoder_train["val_interval"]
     autoencoder_warm_up_n_epochs = 5
-    total_step = 0
+    
     best_val_recon_epoch_loss = np.inf
     best_val_epoch_loss = np.inf
     best_val_epoch = 0
@@ -278,16 +278,16 @@ def launch_train_autoencoder(args):
 
             scaler.update()
 
-            # write train loss for each batch into tensorboard
-            if rank == 0:
-                total_step += 1
-                writer.add_scalar("train_recon_loss_iter", recons_loss, total_step)
-                writer.add_scalar("train_kl_loss_iter", kl_loss, total_step)
-                writer.add_scalar("train_perceptual_loss_iter", p_loss, total_step)
-                if epoch > autoencoder_warm_up_n_epochs:
-                    writer.add_scalar("train_adv_loss_iter", generator_loss, total_step)
-                    writer.add_scalar("train_fake_loss_iter", loss_d_fake, total_step)
-                    writer.add_scalar("train_real_loss_iter", loss_d_real, total_step)
+        # write train loss for each batch into tensorboard
+        if rank == 0:
+            
+            writer.add_scalar("train_recon_loss_epoch", recons_loss, epoch)
+            writer.add_scalar("train_kl_loss_epoch", kl_loss, epoch)
+            writer.add_scalar("train_perceptual_loss_epoch", p_loss, epoch)
+            if epoch > autoencoder_warm_up_n_epochs:
+                writer.add_scalar("train_adv_loss_epoch", generator_loss, epoch)
+                writer.add_scalar("train_fake_loss_epoch", loss_d_fake, epoch)
+                writer.add_scalar("train_real_loss_epoch", loss_d_real, epoch)
 
         # validation
         if epoch % val_interval == 0:

@@ -300,7 +300,9 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR, infer_sch
                     current_latents = current_latents / scale_factor
 
                     reconstructed_images = autoencoder.decode(current_latents)
-                    normalized_reconstructed_images = scale_intensity_from_histogram_peak(reconstructed_images, target_value=2.0/7.0)
+                    normalized_reconstructed_images = torch.zeros_like(reconstructed_images)
+                    for volume in range(reconstructed_images.shape[0]):
+                        normalized_reconstructed_images[volume] = scale_intensity_from_histogram_peak(reconstructed_images[volume], target_value=2.0/7.0)
 
                     # make the anomaly map (difference between infered and original)
                     final_anomaly_map = torch.abs(normalized_reconstructed_images - test_images)

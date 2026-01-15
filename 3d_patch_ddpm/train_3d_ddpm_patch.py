@@ -363,7 +363,6 @@ def launch_train_patch(args):
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
     os.makedirs(MODELS_DIR, exist_ok=True)
 
-    
     train_patch_size = args.patch_size
     infer_patch_size = args.patch_size
     patch_overlap = args.dataset["patch_overlap"]
@@ -448,6 +447,7 @@ def launch_train_patch(args):
 
     model = define_instance(args, "network_def").to(device)
     last_epoch = 0
+    
     if args.diffusion_train.get("resume_checkpoint", False) == True:
     
         last_epoch = args.diffusion_train.get("last_checkpoint_epoch", None)
@@ -541,7 +541,7 @@ def launch_train_patch(args):
             with torch.no_grad():
                 for step, batch in enumerate(val_loader):
                     images = batch.to(device)
-                    images = images[..., args.slice_indexes_start:args.slice_indexes_end]
+                    #images = images[..., args.slice_indexes_start:args.slice_indexes_end]
                     batch_loss, processed, stitched_pred = _validate_batch_with_patches(
                         images,
                         infer_patch_size,

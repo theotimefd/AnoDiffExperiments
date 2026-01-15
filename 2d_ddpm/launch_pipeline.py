@@ -75,6 +75,10 @@ def main():
             tprint("Launching anomaly_detection_inference")
             launch_anomaly_detection_inference(args)
         
+        if step=="anomaly_detection_inference_no_abs_value" and rank==0:
+            tprint("Launching anomaly_detection_inference with no abs value for the anomaly maps")
+            launch_anomaly_detection_inference(args, no_abs_value=True)
+        
 
 
 if __name__ == "__main__":

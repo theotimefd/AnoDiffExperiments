@@ -2,16 +2,18 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_5",
     "description": "3D LDM on flair",
-    "pipeline": ["train_diffusion"],
+    "pipeline": ["compute_metrics_reconstruction_ae", "train_diffusion", "compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 8,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_flair_dataset_small_added_oasis",
-        "test": "brats"
+        "name": "final_adc_dataset_small_added_ixi",
+        "test": "soop",
+        "save_anomaly_maps": true
     },
+    "show_summary_figures": true,
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
         "transforms": [
@@ -67,7 +69,7 @@
         ]
     },
     "noise": {
-        "type": "simplex",
+        "type": "gaussian",
         "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
@@ -87,12 +89,14 @@
         "channels": [
             64,
             128,
-            256
+            256,
+            512
         ],
         "num_res_blocks": 2,
         "norm_num_groups": 32,
         "norm_eps": 1e-06,
         "attention_levels": [
+            false,
             false,
             false,
             false
@@ -101,12 +105,12 @@
         "with_decoder_nonlocal_attn": false
     },
     "autoencoder_train": {
-        "batch_size": 6,
-        "num_workers": 8,
+        "batch_size": 4,
+        "num_workers": 2,
         "perceptual_weight": 0.001,
         "kl_weight": 1e-7,
         "recon_loss": "l1",
-        "max_epochs": 1000,
+        "max_epochs": 200,
         "val_interval": 10,
         "optimizer_autoencoder": {
             "type": "Adam",
@@ -129,14 +133,13 @@
         "spatial_dims": "@spatial_dims",
         "in_channels": "@latent_channels",
         "out_channels": "@latent_channels",
-        "channels":[256, 256, 512],
-        "attention_levels":[false, true, true],
-        "num_head_channels":[0, 64, 64],
-        "num_res_blocks":2,
+        "channels":[32, 64, 64, 64],
+        "attention_levels":[false, true, true, true],
+        "num_head_channels":8,
         "use_flash_attention":true
     },
     "diffusion_train": {
-        "max_epochs": 6000,
+        "max_epochs": 600,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",
@@ -170,9 +173,9 @@
                 "_target_": "custom_transforms.SetBackgroundToZero"
             }
         },
-        "noise_rate_min": 0.15,
-        "noise_rate_max": 0.35,
-        "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.35
+        "noise_rate_min": 0.01,
+        "noise_rate_max": 0.1,
+        "noise_timesteps_interval": 10,
+        "noise_rate_visualize":0.03
     }
 }
