@@ -10,8 +10,9 @@
     "dataset":{
         "name": "final_flair_dataset_small_added_oasis",
         "test": "soop",
-        "save_anomaly_maps":false,
+        "save_anomaly_maps":true,
         "batch_size": 64,
+        "patch_batch_size":128,
         "patch_overlap": [16, 16, 16],
         "num_workers": 2,
         "slice_indexes_start":22,

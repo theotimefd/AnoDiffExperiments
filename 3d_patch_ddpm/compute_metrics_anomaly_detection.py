@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 from monai import transforms
 from monai.data import CacheDataset, DataLoader, Dataset
-from monai.utils import set_determinism
+from monai.utils import set_determinism, first
 from monai.data.utils import pad_list_data_collate
 from torch.amp import autocast
 from tqdm import tqdm
@@ -41,6 +41,7 @@ import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import *
 from make_anomaly_maps import make_anomaly_maps
+from make_anomaly_maps_optim import make_anomaly_maps_optim, _run_patchwise_test_optim
 
 from monai.metrics import compute_iou
 
@@ -439,6 +440,143 @@ def process_volume(idx, test_images, image_paths, i, infer_patch_size, patch_ove
         nib.save(nib.Nifti1Image(final_anomaly_map[idx].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}.nii.gz")
 
 
+def show_summary_figure(args, device, model, infer_scheduler, image_loader, mask_loader, infer_timesteps, median_filter_size, threshold, erosion_dilation_iterations, metrics_result_text, ROOT_DIR, EXPERIMENT_NAME, SUB_EXPERIMENT_NAME):
+
+    
+    if args.noise["type"] == "simplex":
+        simplexObj = simplex.Simplex_CLASS()
+
+
+    for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
+        if i>0:break
+
+        test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device) # list of 2d images
+        test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device) # list of 2d images
+        
+        test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
+        test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
+
+        final_anomaly_maps = torch.zeros_like(test_anomaly_images) # list of 2d images
+        infered_maps = torch.zeros_like(test_anomaly_images) # list of 2d images
+
+        with torch.no_grad():
+            with autocast(device_type=device, enabled=True):
+
+                stitched_pred = _run_patchwise_test_optim(
+                    image_batch,
+                    args.dataset["patch_size"],
+                    args.dataset["patch_overlap"],
+                    args.dataset["patch_batch_size"],
+                    args.noise["type"],
+                    simplexObj,
+                    model,
+                    infer_scheduler,
+                    infer_timesteps,
+                    device,
+                )
+
+                for idx, infered_volume in enumerate(stitched_pred):
+                    
+                    normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
+                    infered_maps[idx] = normalized_infered_volume[..., normalized_infered_volume.shape[-1]//2]
+                    # make the anomaly map (difference between infered and original)
+                    final_anomaly_map = torch.abs(normalized_infered_volume - image_batch[idx])
+                    final_anomaly_maps[idx] = final_anomaly_map[..., final_anomaly_map.shape[-1]//2]
+                    
+        
+
+    # ----------- PLOT -----------
+
+    fig, axes = plt.subplots(6, 8, figsize=(25, 17), constrained_layout=True)
+    plt.tight_layout()
+
+    for idx in range(min(4, test_anomaly_images.shape[0])):
+
+        # Original test_anomaly images
+        original_image = test_anomaly_images[idx, 0].cpu().numpy()
+        axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
+        axes[0, idx*2].set_title(f'Original {idx+1}')
+        axes[0, idx*2].axis('off')
+
+        axes[0, idx*2+1].hist(original_image[original_image>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[0, idx*2+1].set_ylim(0, 2000)
+        axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
+        
+        
+
+        # 3x average inferred images
+        #print(infered_image.shape)
+        infered_image_slice = infered_maps[idx, 0].cpu().numpy()
+        
+        axes[1, idx*2].imshow(infered_image_slice, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].set_title(f'Inferred {idx+1}')
+        axes[1, idx*2].axis('off')
+
+        axes[1, idx*2+1].hist(infered_image_slice[infered_image_slice>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].set_ylim(0, 2000)
+        axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        # Difference images
+        difference_image = final_anomaly_maps[idx, 0].cpu().numpy()
+        # apply median filter if specified
+        if median_filter_size is not None and median_filter_size > 0:
+            final_anomaly_map_np = difference_image
+            for b in range(final_anomaly_map_np.shape[0]):
+                final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
+            final_anomaly_map = final_anomaly_map_np
+        else:
+            final_anomaly_map = difference_image
+        
+        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].set_title(f'Difference {idx+1}, median filter size: {median_filter_size}')
+        axes[2, idx*2].axis('off')
+
+        axes[2, idx*2+1].hist(final_anomaly_map[final_anomaly_map>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[2, idx*2+1].set_ylim(0, 2000)
+        axes[2, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        # Thresholded difference images
+        thresholded_difference_image = (final_anomaly_map > threshold)#.astype(np.float32)
+        ano_segmentation_np = thresholded_difference_image
+        """if erosion_dilation_iterations_visualize > 0: #TODO
+            ano_segmentation_np = thresholded_difference_image
+            ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)
+            ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)"""
+
+        axes[3, idx*2].imshow(ano_segmentation_np, cmap='gray', vmin=0, vmax=1)
+        axes[3, idx*2].set_title(f'Thresholded Difference {idx+1}, erosion-dilation steps: {erosion_dilation_iterations}')
+        axes[3, idx*2].axis('off')
+
+        # ground truth masks
+        ground_truth_mask = test_anomaly_masks[idx, 0].cpu().numpy()
+        axes[4, idx*2].imshow(ground_truth_mask, cmap='gray', vmin=0, vmax=1)
+        axes[4, idx*2].set_title(f'Ground Truth {idx+1}')
+        axes[4, idx*2].axis('off')
+
+        axes[4, idx*2+1].hist(ground_truth_mask[ground_truth_mask>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[4, idx*2+1].set_ylim(0, 2000)
+        axes[4, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
+
+        axes[0, idx*2+1].set_box_aspect(1) # Set the aspect ratio of the histogram subplot 
+        axes[1, idx*2+1].set_box_aspect(1)  
+        axes[2, idx*2+1].set_box_aspect(1)  
+        axes[3, idx*2+1].set_box_aspect(1) 
+        axes[4, idx*2+1].set_box_aspect(1)  
+
+    
+    # Add an empty row to create more whitespace for the figtext
+    for idx in range(8):
+        axes[5, idx].axis('off')
+    # Add overall title with metric results
+
+    plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, LDM 3D volumes", fontsize=16)
+
+    plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
+
+
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_ldm_3d_volumes.png", transparent=False, dpi=150)
+
+
 def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, infer_timesteps, threshold, median_filter_size, erosion_dilation_iterations):
     """
     input:
@@ -490,30 +628,8 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
     # then we compute the metrics on them
 
     # for every batch
-    for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))):
 
-        test_images = image_batch.to(device)
-        test_masks = mask_batch.to(device)
-        test_masks[test_masks>0.5] = 1.0
-        test_masks[test_masks<=0.5] = 0.0
-
-        with torch.no_grad():
-            with autocast(device_type=device, enabled=True):
-                
-                volumes = test_images.shape[0]
-
-                tprint(f"making anomaly maps for batch {i+1}/{len(image_loader)} with {volumes} volumes at noise timesteps {infer_timesteps}")
-
-                  
-
-                # use multiprocessing to process two volumes in parallel
-                # Set spawn method for CUDA compatibility
-                mp.set_start_method('spawn', force=True)
-                num_processes = 4
-                with ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context('spawn')) as executor:
-                    futures = [executor.submit(process_volume, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files) for idx in range(volumes)]
-                    for future in as_completed(futures):
-                        future.result()  # To raise exceptions if any
+    make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, ANOMALY_MAPS_DIR)
 
     if not no_masks:
 
@@ -534,9 +650,9 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
             for idx in range(volumes): 
 
                 image_id = i*test_images.shape[0] + idx
-                image_name = os.path.basename(image_paths[image_id])
+                patient_id = os.path.basename(image_paths[image_id]).replace(".nii.gz", "")
                 
-                reconstructed_map_path = ANOMALY_MAPS_DIR+f"ano_map_{image_name}.nii.gz"
+                reconstructed_map_path = ANOMALY_MAPS_DIR+f"{patient_id}_t_{infer_timesteps}.nii.gz"
                 
                 # Load the reconstructed NIfTI file
                 reconstructed_nifti = nib.load(reconstructed_map_path)
@@ -598,7 +714,7 @@ def launch_compute_metrics_anomaly_detection(args):
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
-
+    SUB_EXPERIMENT_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
     ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
@@ -881,7 +997,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
     if args.dataset["test"] == "brats":
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
             
         iou_scores_df, dice_scores_df = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
             
@@ -928,7 +1044,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
             # --------------------------------- large group
             
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
         
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
@@ -974,7 +1090,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         for timesteps in num_timesteps_to_try:
             # --------------------------------- medium group
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
 
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -999,7 +1115,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
             # --------------------------------- small group
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
 
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1029,7 +1145,7 @@ def launch_compute_metrics_anomaly_detection(args):
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try: 
             #stprint(f"starting generating anomaly maps for large group timesteps: {timesteps}")      
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
 
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
@@ -1061,8 +1177,7 @@ def launch_compute_metrics_anomaly_detection(args):
         if args.show_summary_figures:
             show_summary_figure(args, 
                                 device, 
-                                autoencoder,
-                                unet, 
+                                model,
                                 infer_scheduler, 
                                 test_anomaly_large_loader_metrics, 
                                 test_masks_large_loader_metrics, 
@@ -1078,7 +1193,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         # --------------------------------- medium group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
         
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1103,7 +1218,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         # --------------------------------- small group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
         
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1131,7 +1246,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params_small), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         

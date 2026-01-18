@@ -122,8 +122,8 @@ def _create_patch_weight(patch_size: Sequence[int], sigma_scale: float = 0.125) 
     return weight
 
 
-def _run_patchwise_test(
-    volume: torch.Tensor,
+def _run_patchwise_test_optim(
+    volumes: torch.Tensor,
     patch_size: Sequence[int],
     overlap: Sequence[int],
     patch_batch_size: int,
@@ -134,8 +134,8 @@ def _run_patchwise_test(
     num_timesteps: int,
     device,
 ):
-    aggregator_pred = torch.zeros_like(volume, dtype=torch.float32)
-    weight_sum = torch.zeros_like(volume, dtype=torch.float32)
+    aggregator_pred = torch.zeros_like(volumes, dtype=torch.float32)
+    weight_sum = torch.zeros_like(volumes, dtype=torch.float32)
     patch_queue: List[torch.Tensor] = []
     slice_queue: List[Tuple[slice, slice, slice]] = []
     total_patches = 0
@@ -145,6 +145,11 @@ def _run_patchwise_test(
     """
     Same as _run_patchwise_inference but goes all the way to the fully denoised image
     Uses weighted averaging to eliminate seam artifacts at patch boundaries.
+
+    Modified to allow multiple volumes to be processed in a batch.
+
+    volumes: input tensor of shape (B, C, H, W, D)
+    patch_size: size of each 3D patch (h, w, d)
     """
 
     def _flush_queue():
@@ -160,71 +165,49 @@ def _run_patchwise_test(
         patch_count = batch_tensor.shape[0]
         total_patches += patch_count
 
-        for idx, patch_slices in enumerate(slice_queue):
-            target_slice = (slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])
+        for idx, utils_slices in enumerate(slice_queue):
+            v = utils_slices[0] #which volume in the batch
+            patch_slices = utils_slices[1] #the slices defining the patch location for the current volume
+            target_slice = (slice(None), patch_slices[0], patch_slices[1], patch_slices[2])
             
             # Apply weighted contribution instead of simple addition
-            aggregator_pred[target_slice] += preds[idx].unsqueeze(0).float() * patch_weight
-            weight_sum[target_slice] += patch_weight  # Accumulate weights instead of counts
+            
+            aggregator_pred[v,...][target_slice] += preds[idx].float() * patch_weight.unsqueeze(0) # TODO maybe should put this on the cpu
+            weight_sum[v,...][target_slice] += patch_weight  # Accumulate weights instead of counts
 
 
         patch_queue.clear()
         slice_queue.clear()
 
-    for patch_slices in _generate_patch_slices(volume.shape[-3:], patch_size, overlap): # goes through the slices that define each patch
+    for v, single_volume in enumerate(volumes):  # processes each volume in the batch separately
 
-        patch = volume[(slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])] # extracts the patch using the slices
+        single_volume = single_volume.unsqueeze(0)  # add batch dimension
+        tprint(f"single volume shape: {single_volume.shape}")
 
-        patch_queue.append(patch) # patch_queue stores all the patches for the current volume batch
-        slice_queue.append(patch_slices)
+        for patch_slices in _generate_patch_slices(single_volume.shape[-3:], patch_size, overlap): # goes through the slices that define each patch
 
-        if len(patch_queue) >= patch_batch_size: # makes sure there aren't too many patches at one time (memory issues)
-            _flush_queue() # does the inference and computes loss
+            patch = single_volume[(slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])] # extracts the patch using the slices
+
+            patch_queue.append(patch) # patch_queue stores all the patches for the current volume batch
+            slice_queue.append([v,patch_slices])
+
+            if len(patch_queue) >= patch_batch_size: # makes sure there aren't too many patches at one time (memory issues)
+                tprint(f"started flush queue at volume {v}, total patches so far: {total_patches}")
+                _flush_queue() # does the inference and computes loss
+
+    
 
     _flush_queue()
 
     weight_sum = torch.clamp(weight_sum, min=1e-8)
     stitched_pred = aggregator_pred / weight_sum  # Weighted average for smooth blending
+    tprint(f"finished predictions for this batch")
+    tprint(f"stitched_pred shape: {stitched_pred.shape}")
 
     return stitched_pred
 
-def process_volume(idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files):
 
-    image_id = i*test_images.shape[0] + idx
-    image_name = os.path.basename(image_paths[image_id])
-    output_path = output_folder+f"{image_name.split('.')[0]}_t_{infer_timesteps}.nii.gz"
-    
-    if os.path.exists(output_path) and not replace_existing_files:
-        tprint(f"Reconstructed image for patient {image_name.split('.')[0]} at noise timesteps {infer_timesteps} already exists, skipping inference.")
-        return
-
-    volume = test_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
-    volume = volume.to(device)
-    
-    stitched_pred = _run_patchwise_test(
-        volume,
-        infer_patch_size,
-        patch_overlap,
-        patch_infer_batch_size,
-        args.noise["type"],
-        simplexObj,
-        model,
-        infer_scheduler,
-        infer_timesteps,
-        device,
-    )
-    infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
-
-    # make the anomaly map (difference between infered and original)
-    final_anomaly_map = torch.abs(infered - volume)
-    
-    #if the output file doesn't exist already
-    if not os.path.exists(output_path):
-        nib.save(nib.Nifti1Image(final_anomaly_map.squeeze().cpu().numpy(), basic_affine), output_path)
-    elif replace_existing_files:
-        nib.save(nib.Nifti1Image(final_anomaly_map.squeeze().cpu().numpy(), basic_affine), output_path)
-
-def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False):
+def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
@@ -237,7 +220,7 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
     infer_patch_size = args.patch_size
     patch_overlap = args.dataset["patch_overlap"]
 
-    patch_infer_batch_size = args.dataset["batch_size"]
+    patch_infer_batch_size = args.dataset["patch_batch_size"]
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads()) 
@@ -262,19 +245,42 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
 
         with torch.no_grad():
             with autocast("cuda", enabled=True):
+                
+                image_ids = [i*test_images.shape[0] + idx for idx in range(test_images.shape[0])]
+                image_names = [os.path.basename(image_paths[image_id]) for image_id in image_ids]
+                output_paths = [output_folder+f"{image_name.split('.')[0]}_t_{infer_timesteps}.nii.gz" for image_name in image_names]
+                
+                # if all output files already exist, skip inference
+                all_exist = all([os.path.exists(output_path) for output_path in output_paths])
+                if all_exist and not replace_existing_files:
+                    tprint(f"All reconstructed images at noise timesteps {infer_timesteps} already exist for current batch, skipping inference.")
+                    continue
 
-                volumes = test_images.shape[0]
 
-                tprint(f"making anomaly maps for batch {i+1}/{len(image_loader)} with {volumes} volumes at noise timesteps {infer_timesteps}")
+                
+                stitched_pred = _run_patchwise_test_optim(
+                    test_images,
+                    infer_patch_size,
+                    patch_overlap,
+                    patch_infer_batch_size,
+                    args.noise["type"],
+                    simplexObj,
+                    model,
+                    infer_scheduler,
+                    infer_timesteps,
+                    device,
+                )
+                
+                for idx, infered_volume in enumerate(stitched_pred):
+                    
+                    normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
 
-                  
-
-                # use multiprocessing to process two volumes in parallel
-                # Set spawn method for CUDA compatibility
-                mp.set_start_method('spawn', force=True)
-                num_processes = 4
-                with ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context('spawn')) as executor:
-                    futures = [executor.submit(process_volume, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files) for idx in range(volumes)]
-                    for future in as_completed(futures):
-                        future.result()  # To raise exceptions if any
+                    # make the anomaly map (difference between infered and original)
+                    final_anomaly_map = torch.abs(normalized_infered_volume - test_images[idx])
+                    
+                    #if the output file doesn't exist already
+                    if not os.path.exists(output_paths[idx]):
+                        nib.save(nib.Nifti1Image(final_anomaly_map.squeeze().cpu().numpy(), basic_affine), output_paths[idx])
+                    elif replace_existing_files:
+                        nib.save(nib.Nifti1Image(final_anomaly_map.squeeze().cpu().numpy(), basic_affine), output_paths[idx])
                     
