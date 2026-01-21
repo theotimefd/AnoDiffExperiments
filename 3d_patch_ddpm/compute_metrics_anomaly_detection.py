@@ -782,9 +782,12 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_loader_select_params = DataLoader( # the first 50% of the test data is used to select the best noise timestep value and best threshold.
             test_anomaly_ds[:len(test_anomaly_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_images_select_params = test_anomaly_images[:len(test_anomaly_ds)//2]
+
         test_anomaly_loader_metrics = DataLoader(       # The second 50% is used to compute the final IOU and DICE metrics with these best values.
             test_anomaly_ds[len(test_anomaly_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_images_metrics = test_anomaly_images[len(test_anomaly_ds)//2:]
 
         test_masks_ds = CacheDataset(data=test_masks, transform=test_masks_transforms)
         
@@ -882,23 +885,34 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_large_loader_select_params = DataLoader( # the first 50% of the test data is used to select the best noise timestep value and best threshold.
             test_anomaly_large_ds[:len(test_anomaly_large_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_large_images_select_params = test_anomaly_large_images[:len(test_anomaly_large_images)//2]
+
         test_anomaly_large_loader_metrics = DataLoader(       # The second 50% is used to compute the final IOU and DICE metrics with these best values.
             test_anomaly_large_ds[len(test_anomaly_large_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_large_images_metrics = test_anomaly_large_images[len(test_anomaly_large_images)//2:]
+
 
         test_anomaly_medium_loader_select_params = DataLoader(
             test_anomaly_medium_ds[:len(test_anomaly_medium_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_medium_images_select_params = test_anomaly_medium_images[:len(test_anomaly_medium_images)//2]
+
         test_anomaly_medium_loader_metrics = DataLoader(
             test_anomaly_medium_ds[len(test_anomaly_medium_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_medium_images_metrics = test_anomaly_medium_images[len(test_anomaly_medium_images)//2:]
+
 
         test_anomaly_small_loader_select_params = DataLoader(
             test_anomaly_small_ds[:len(test_anomaly_small_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_small_images_select_params = test_anomaly_small_images[:len(test_anomaly_small_images)//2]
+
         test_anomaly_small_loader_metrics = DataLoader(
             test_anomaly_small_ds[len(test_anomaly_small_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_small_images_metrics = test_anomaly_small_images[len(test_anomaly_small_images)//2:]
         
         test_masks_large_ds = CacheDataset(data=large_group_masks, transform=test_masks_transforms)
         test_masks_medium_ds = CacheDataset(data=medium_group_masks, transform=test_masks_transforms)
@@ -966,9 +980,13 @@ def launch_compute_metrics_anomaly_detection(args):
         test_anomaly_large_loader_select_params_small = DataLoader( # the first 50% of the test data is used to select the best noise timestep value and best threshold.
             test_anomaly_large_ds[:small_ano_batch_size], batch_size=small_ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_large_images_select_params = test_anomaly_large_images[:small_ano_batch_size]
+
         test_anomaly_large_loader_metrics_small = DataLoader(       # The second 50% is used to compute the final IOU and DICE metrics with these best values.
             test_anomaly_large_ds[small_ano_batch_size:2*small_ano_batch_size], batch_size=small_ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
+        test_anomaly_large_images_metrics = test_anomaly_large_images[small_ano_batch_size:2*small_ano_batch_size]
+
         test_masks_large_loader_select_params_small = DataLoader(
             test_masks_large_ds[:small_ano_batch_size], batch_size=small_ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
@@ -1000,7 +1018,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
     if args.dataset["test"] == "brats":
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_loader_select_params, test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
             
         iou_scores_df, dice_scores_df = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
             
@@ -1011,7 +1029,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_loader_metrics, test_anomaly_images, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_loader_metrics, test_anomaly_images_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text = f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1047,7 +1065,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
             # --------------------------------- large group
             
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
         
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
@@ -1062,7 +1080,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
         metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1093,7 +1111,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         for timesteps in num_timesteps_to_try:
             # --------------------------------- medium group
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
 
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1104,7 +1122,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1118,7 +1136,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
             # --------------------------------- small group
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
 
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1129,7 +1147,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_small_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1148,7 +1166,7 @@ def launch_compute_metrics_anomaly_detection(args):
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try: 
             #stprint(f"starting generating anomaly maps for large group timesteps: {timesteps}")      
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
 
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
@@ -1165,7 +1183,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         tprint(f"Best params large group: {best_params}")
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images, test_masks_large_loader_metrics, best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
         metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1196,7 +1214,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         # --------------------------------- medium group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
         
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1207,7 +1225,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images, test_masks_medium_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1221,7 +1239,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         # --------------------------------- small group
         for timesteps in num_timesteps_to_try:       
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
         
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1233,7 +1251,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_small_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images, test_masks_small_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
@@ -1249,7 +1267,7 @@ def launch_compute_metrics_anomaly_detection(args):
         
         # --------------------------------- large group
         for timesteps in num_timesteps_to_try:
-            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params_small, test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params_small), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
@@ -1260,7 +1278,7 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images, test_masks_large_loader_metrics_small, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images_metrics, test_masks_large_loader_metrics_small, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
         metrics_result_text = f"soop_fast: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"

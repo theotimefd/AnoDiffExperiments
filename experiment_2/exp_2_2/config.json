@@ -1,15 +1,15 @@
 {
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_2",
-    "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
-    "pipeline": ["anomaly_detection_inference_no_abs_value"],
+    "description": "2D DDPM on adc with simplex noise, validation on whole volume",
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_adc_dataset_small_added_ixi",
-        "test": "aini-stroke_ait",
+        "test": "soop",
         "save_anomaly_maps":true,
         "batch_size": 16,
         "num_workers": 16,
