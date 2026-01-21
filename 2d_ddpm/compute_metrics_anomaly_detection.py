@@ -71,6 +71,7 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
 
         mask_nib = nib.load(os.path.join(masks_folder, f"{anomaly_file.split('_')[0]}.nii.gz"))
         mask = torch.from_numpy(mask_nib.get_fdata())
+        mask = mask.unsqueeze(0).unsqueeze(0)  # B1HWD
         
         # Pre-compute filtered versions
         filtered_maps = {-1: torch.from_numpy(anomaly_map)}
@@ -112,6 +113,8 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
                         ano_segmentation = ano_segmentation_base
 
                     #tprint(f"computing iou score for {anomaly_file} ..")
+                    # ano_segmentation and masks must be in format : B1HWD
+                    ano_segmentation = ano_segmentation.unsqueeze(0).unsqueeze(0)
 
                     # Compute metrics
                     iou_score = compute_iou(ano_segmentation, mask)
@@ -143,10 +146,13 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
     iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
     iou_scores_df.fillna(0.0, inplace=True)
+    iou_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
 
     dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
     dice_scores_df.fillna(0.0, inplace=True)
+    dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
+    
 
 
     anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
@@ -770,8 +776,8 @@ def launch_compute_metrics_anomaly_detection(args):
             
         iou_scores_df, dice_scores_df = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
             
-        iou_scores_df.to_csv(SUB_EXPERIMENT_DIR+"iou_scores_param_search_brats.csv", index=False)
-        dice_scores_df.to_csv(SUB_EXPERIMENT_DIR+"dice_scores_param_search_brats.csv", index=False)
+        iou_scores_df.to_csv(SUB_EXPERIMENT_DIR+"iou_scores_param_search_brats.csv")
+        dice_scores_df.to_csv(SUB_EXPERIMENT_DIR+"dice_scores_param_search_brats.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df.idxmax()['IOU']
@@ -816,8 +822,8 @@ def launch_compute_metrics_anomaly_detection(args):
             
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/TODO/TODO/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_large_group.csv", index=False)
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_large_group.csv", index=False)
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_large_group.csv")
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_large_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_large_group.idxmax()['IOU']
@@ -858,8 +864,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_medium_group.csv", index=False)
-        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_medium_group.csv", index=False)
+        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_medium_group.csv")
+        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_medium_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
@@ -883,8 +889,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_small_group.csv", index=False)
-        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_small_group.csv", index=False)
+        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_small_group.csv")
+        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_small_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_small_group.idxmax()['IOU']
@@ -912,8 +918,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_large_group.csv", index=False)
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_large_group.csv", index=False)
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_large_group.csv")
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_large_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_large_group.idxmax()['IOU']
@@ -954,8 +960,8 @@ def launch_compute_metrics_anomaly_detection(args):
         
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_medium_group.csv", index=False)
-        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_medium_group.csv", index=False)
+        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_medium_group.csv")
+        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_medium_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
@@ -980,8 +986,8 @@ def launch_compute_metrics_anomaly_detection(args):
         iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_small_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
 
-        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_small_group.csv", index=False)
-        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_small_group.csv", index=False)
+        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_small_group.csv")
+        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_small_group.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_small_group.idxmax()['IOU']
@@ -1007,8 +1013,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(test_anomaly_large_loader_select_params_small), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
         
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop.csv", index=False)
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop.csv", index=False)
+        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop.csv")
+        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop.csv")
 
         # Find the best parameters based on IOU score
         best_params = iou_scores_df_large_group.idxmax()['IOU']

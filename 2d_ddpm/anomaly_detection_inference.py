@@ -364,12 +364,12 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
         
         # --------------------------------- large group
         if "flair" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 100
+            best_num_timesteps_large_group = 150
             best_median_filter_size_large_group=5
             best_threshold_large_group=0.06
             best_erosion_dilation_iterations_large_group=2
         elif "adc" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 150
+            best_num_timesteps_large_group = 100
             best_median_filter_size_large_group=5
             best_threshold_large_group=0.04
             best_erosion_dilation_iterations_large_group=2
@@ -395,9 +395,9 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     if args.dataset["test"] == "healthy_test_set":
 
         if "flair" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 100
+            best_num_timesteps_large_group = 150
             best_median_filter_size_large_group=5
-            best_threshold_large_group=0.06
+            best_threshold_large_group=0.04
             best_erosion_dilation_iterations_large_group=2
 
             test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/final_flair_dataset_small_added_oasis/test.csv")
@@ -429,9 +429,9 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
 
 
         elif "adc" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 150
+            best_num_timesteps_large_group = 100
             best_median_filter_size_large_group=5
-            best_threshold_large_group=0.04
+            best_threshold_large_group=0.06
             best_erosion_dilation_iterations_large_group=2
         
             test_reconstruction_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/final_adc_dataset_small_added_ixi/test.csv")
@@ -470,6 +470,85 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
             dir_name = ANOMALY_MAPS_DIR+"healthy_test_set/"
             os.makedirs(dir_name, exist_ok=True)
             mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, dir_name, infer_scheduler, test_reconstruction_loader, test_reconstruction_datalist, None, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
+        
+        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+
+        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group}"
+        metrics_result_text += "\n"
+        tprint(metrics_result_text)
+
+    if args.dataset["test"] == "aini-stroke_ait":
+
+        # images with failed registration
+        bad_images_flair = ["aini-stroke_15092", "aini-stroke_17043", "aini-stroke_18254"] # registration problems
+        bad_images_adc = ["aini-stroke_13607", "aini-stroke_21053"]
+
+
+        if "flair" in args.dataset["name"].lower():
+            best_num_timesteps_large_group = 150
+            best_median_filter_size_large_group=5
+            best_threshold_large_group=0.06
+            best_erosion_dilation_iterations_large_group=2
+
+            
+            #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
+            test_ait_datalist = os.listdir(ROOT_DIR+"datasets/aini-stroke_ait/flair_registered/")
+            test_ait_datalist = [os.path.join(ROOT_DIR+"datasets/aini-stroke_ait/flair_registered/", img) for img in test_ait_datalist if img.split('.')[0] not in bad_images_flair]
+
+            #test_unhealthy_datalist = test_unhealthy_images_path
+
+            batch_size = args.dataset["batch_size"]
+            num_workers = args.dataset["num_workers"]
+
+
+            # transforms
+            test_ait_transforms = define_instance(args, "val_transforms")
+            test_ait_ds = CacheDataset(data=test_ait_datalist, transform=test_ait_transforms)
+
+
+            test_ait_loader = DataLoader(
+                test_ait_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            )
+
+
+        elif "adc" in args.dataset["name"].lower():
+            best_num_timesteps_large_group = 100
+            best_median_filter_size_large_group=5
+            best_threshold_large_group=0.06
+            best_erosion_dilation_iterations_large_group=2
+        
+            #test_reconstruction_datalist = sorted(test_reconstruction_images_path)
+            test_ait_datalist = os.listdir(ROOT_DIR+"datasets/aini-stroke_ait/adc_registered/")
+            test_ait_datalist = [os.path.join(ROOT_DIR+"datasets/aini-stroke_ait/adc_registered/", img) for img in test_ait_datalist if img.split('.')[0] not in bad_images_adc]
+
+
+            #test_unhealthy_datalist = test_unhealthy_images_path
+
+            batch_size = args.dataset["batch_size"]
+            num_workers = args.dataset["num_workers"]
+
+
+            # transforms
+            test_ait_transforms = define_instance(args, "val_transforms")
+            test_ait_ds = CacheDataset(data=test_ait_datalist, transform=test_ait_transforms)
+
+
+            test_ait_loader = DataLoader(
+                test_ait_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            )
+        
+
+        if no_abs_value:
+            dir_name = ANOMALY_MAPS_DIR+"ait_no_abs/"
+            os.makedirs(dir_name, exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, dir_name, infer_scheduler, test_ait_loader, test_ait_datalist, None, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
+        else:
+            dir_name = ANOMALY_MAPS_DIR+"ait/"
+            os.makedirs(dir_name, exist_ok=True)
+            mean_iou, std_iou, mean_dice, std_dice = inference(args, model, device, dir_name, infer_scheduler, test_ait_loader, test_ait_datalist, None, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group, no_abs_value=no_abs_value)
         
         metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 
