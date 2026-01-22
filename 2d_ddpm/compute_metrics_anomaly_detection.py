@@ -801,9 +801,12 @@ def launch_compute_metrics_anomaly_detection(args):
 
     if args.dataset["test"] == "isles": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
         print("WARNING ISLES test is still not completely implemented")
+        
+        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         for timesteps in num_timesteps_to_try:
 
             # --------------------------------- large group
+            
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
             
         iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/TODO/TODO/", len(test_anomaly_large_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
@@ -843,9 +846,10 @@ def launch_compute_metrics_anomaly_detection(args):
                             EXPERIMENT_NAME=EXPERIMENT_NAME,
                             SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
                             )
-        
+        # --------------------------------- medium group
+        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
         for timesteps in num_timesteps_to_try:
-            # --------------------------------- medium group
+            
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
 
         iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(test_anomaly_medium_loader_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try)
@@ -869,7 +873,8 @@ def launch_compute_metrics_anomaly_detection(args):
         metrics_result_text += "\n"
         tprint(metrics_result_text)
 
-            # --------------------------------- small group
+        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
+        # --------------------------------- small group
         for timesteps in num_timesteps_to_try:
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
 
@@ -899,6 +904,7 @@ def launch_compute_metrics_anomaly_detection(args):
     if args.dataset["test"] == "soop":
         
         # --------------------------------- large group
+        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
         for timesteps in num_timesteps_to_try:       
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_large_loader_select_params, test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
 
@@ -941,6 +947,7 @@ def launch_compute_metrics_anomaly_detection(args):
                                 )
 
         # --------------------------------- medium group
+        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
         for timesteps in num_timesteps_to_try:       
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_medium_loader_select_params, test_anomaly_medium_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
         
@@ -966,6 +973,7 @@ def launch_compute_metrics_anomaly_detection(args):
         tprint(metrics_result_text)
 
         # --------------------------------- small group
+        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
         for timesteps in num_timesteps_to_try:       
             make_anomaly_maps(args, model, device, infer_scheduler, test_anomaly_small_loader_select_params, test_anomaly_small_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
         

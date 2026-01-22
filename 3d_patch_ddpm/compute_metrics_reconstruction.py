@@ -622,8 +622,8 @@ def launch_compute_metrics_reconstruction(args):
     for idx in range(8):
         axes[5, idx].axis('off')
 
-
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+    timesteps_visualize = args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"]+1
+    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {timesteps_visualize} noise:\nPSNR: {np.mean(psnr[timesteps_visualize]):.2f} ± {np.std(psnr[timesteps_visualize]):.2f}\nSSIM: {np.mean(ssim[timesteps_visualize]):.4f} ± {np.std(ssim[timesteps_visualize]):.4f}\nMSE: {np.mean(mse[timesteps_visualize]):.4f} ± {np.std(mse[timesteps_visualize]):.4f}", fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
