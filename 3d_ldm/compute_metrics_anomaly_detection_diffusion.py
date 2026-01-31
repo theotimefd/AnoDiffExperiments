@@ -145,10 +145,12 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
     iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
     iou_scores_df.fillna(0.0, inplace=True)
+    iou_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
 
     dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
     dice_scores_df.fillna(0.0, inplace=True)
+    dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
 
 
     anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
@@ -807,8 +809,8 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
     num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-    thresholds_to_try = np.arange(0.0, 0.2, 0.02) # from 0.0 to 0.2 with step 0.02
-    median_filter_sizes_to_try = [-1, 3, 5] # -1 means no median filter
+    thresholds_to_try = np.arange(0.02, 0.2, 0.02) # from 0.0 to 0.2 with step 0.02
+    median_filter_sizes_to_try = [-1, 3, 5, 7, 10] # -1 means no median filter
     erosion_dilation_iterations_to_try = [0, 1, 2]
 
     # ------------------------ Compute the raw anomaly maps and save them as nifti files ------------------------ #

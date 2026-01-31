@@ -267,7 +267,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
                     for idx_in_batch in range(final_anomaly_map.shape[0]):
                         image_id = i*test_images.shape[0] + idx_in_batch
                         image_name = os.path.basename(image_paths[image_id])
-                        nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"ano_map_{image_name}")
+                        nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"{image_name}")
 
             #tprint(f"unprocessed anomaly map shape: {final_anomaly_map.shape}")
 
@@ -736,8 +736,9 @@ def launch_compute_metrics_anomaly_detection(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
     num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-    thresholds_to_try = np.arange(0.0, 0.2, 0.02) # from 0.0 to 0.2 with step 0.02
-    median_filter_sizes_to_try = [-1, 3, 5] # -1 means no median filter
+    thresholds_to_try = np.arange(0.02, 0.2, 0.02) # from 0.0 to 0.2 with step 0.02
+    #median_filter_sizes_to_try = [-1, 3, 5] # -1 means no median filter
+    median_filter_sizes_to_try = [-1, 3, 5, 7, 10] # -1 means no median filter
     erosion_dilation_iterations_to_try = [0, 1, 2]
 
     # ------------------------ Compute the raw anomaly maps and save them as nifti files ------------------------ #

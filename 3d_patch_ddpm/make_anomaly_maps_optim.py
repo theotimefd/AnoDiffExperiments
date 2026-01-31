@@ -182,7 +182,7 @@ def _run_patchwise_test_optim(
     for v, single_volume in enumerate(volumes):  # processes each volume in the batch separately
 
         single_volume = single_volume.unsqueeze(0)  # add batch dimension
-        tprint(f"single volume shape: {single_volume.shape}")
+        #tprint(f"single volume shape: {single_volume.shape}")
 
         for patch_slices in _generate_patch_slices(single_volume.shape[-3:], patch_size, overlap): # goes through the slices that define each patch
 
@@ -192,7 +192,7 @@ def _run_patchwise_test_optim(
             slice_queue.append([v,patch_slices])
 
             if len(patch_queue) >= patch_batch_size: # makes sure there aren't too many patches at one time (memory issues)
-                tprint(f"started flush queue at volume {v}, total patches so far: {total_patches}")
+                #tprint(f"started flush queue at volume {v}, total patches so far: {total_patches}")
                 _flush_queue() # does the inference and computes loss
 
     
@@ -201,8 +201,8 @@ def _run_patchwise_test_optim(
 
     weight_sum = torch.clamp(weight_sum, min=1e-8)
     stitched_pred = aggregator_pred / weight_sum  # Weighted average for smooth blending
-    tprint(f"finished predictions for this batch")
-    tprint(f"stitched_pred shape: {stitched_pred.shape}")
+    #tprint(f"finished predictions for this batch")
+    #tprint(f"stitched_pred shape: {stitched_pred.shape}")
 
     return stitched_pred
 

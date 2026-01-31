@@ -318,10 +318,12 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
     iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
     iou_scores_df.fillna(0.0, inplace=True)
+    iou_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
 
     dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
     dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
     dice_scores_df.fillna(0.0, inplace=True)
+    dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
 
 
     anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
