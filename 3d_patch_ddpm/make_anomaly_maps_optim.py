@@ -207,7 +207,7 @@ def _run_patchwise_test_optim(
     return stitched_pred
 
 
-def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False):
+def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False, no_abs_value=False):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
@@ -276,7 +276,10 @@ def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, 
                     normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
 
                     # make the anomaly map (difference between infered and original)
-                    final_anomaly_map = torch.abs(normalized_infered_volume - test_images[idx])
+                    if no_abs_value:
+                        final_anomaly_map = normalized_infered_volume - test_images[idx]
+                    else:
+                        final_anomaly_map = torch.abs(normalized_infered_volume - test_images[idx])
                     
                     #if the output file doesn't exist already
                     if not os.path.exists(output_paths[idx]):

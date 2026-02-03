@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_12",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
+    "pipeline": ["train_diffusion", "compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": true,
     "spatial_dims": 3,
     "latent_channels": 4,
@@ -140,7 +140,8 @@
     },
     "diffusion_train": {
         "max_epochs": 600,
-        "last_epoch": 223,
+        "last_epoch": 499,
+        "last_best_val_recon_epoch_loss":0.5801,
         "val_interval": 10,
         "optimizer": {
             "type": "Adam",

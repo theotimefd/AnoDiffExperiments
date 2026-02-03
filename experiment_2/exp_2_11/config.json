@@ -2,8 +2,8 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_11",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
-    "resume_ckpt": true,
+    "pipeline": ["train_diffusion", "compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
+    "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 16,
     "image_size": 128,
@@ -176,7 +176,7 @@
             }
         },
         "noise_rate_min": 0.05,
-        "noise_rate_max": 0.2,
+        "noise_rate_max": 0.3,
         "noise_timesteps_interval": 10,
         "noise_rate_visualize":0.03
     }

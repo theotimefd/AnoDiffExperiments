@@ -197,6 +197,7 @@ def launch_train_diffusion(args):
     trained_diffusion_path_last = os.path.join(MODELS_DIR, "diffusion_unet_last.pt")
 
     best_val_recon_epoch_loss = np.inf
+    last_epoch = 0
 
     if args.resume_ckpt:
         map_location = {"cuda:%d" % 0: "cuda:%d" % rank}
@@ -204,6 +205,7 @@ def launch_train_diffusion(args):
             unet.load_state_dict(torch.load(trained_diffusion_path, map_location=map_location, weights_only=True))
             tprint(f"Rank {rank}: Load trained diffusion model from", trained_diffusion_path)
             best_val_recon_epoch_loss = args.diffusion_train["last_best_val_recon_epoch_loss"]
+            last_epoch = args.diffusion_train["last_epoch"]
         except:
             tprint(f"Rank {rank}: Train diffusion model from scratch.")
 
@@ -233,7 +235,7 @@ def launch_train_diffusion(args):
     total_step = 0
     
 
-    for epoch in range(args.diffusion_train["last_epoch"], max_epochs):
+    for epoch in range(last_epoch, max_epochs):
         unet.train()
         
         lr_scheduler.step()

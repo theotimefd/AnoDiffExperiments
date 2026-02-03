@@ -6,7 +6,10 @@ from pathlib import Path
 from train_3d_ddpm_patch import launch_train_patch
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
+from anomaly_detection_inference import launch_anomaly_detection_inference
 #from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
+
+from utils.utils import tprint
 
 def main():
     parser = argparse.ArgumentParser(description="2D DDPM training script")
@@ -46,22 +49,30 @@ def main():
     for step in args.pipeline:
         
         if step == "train_ddpm":
-            print(f"Launching ddpm training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            tprint(f"Launching ddpm training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train_patch(args)
         
         if step == "compute_metrics_reconstruction" and rank == 0:
-            print("Launching compute_metrics_reconstruction")
+            tprint("Launching compute_metrics_reconstruction")
             launch_compute_metrics_reconstruction(args)
         
         
         if step=="compute_metrics_anomaly_detection" and rank==0:
-            print("Launching compute_metrics_anomaly_detection")
+            tprint("Launching compute_metrics_anomaly_detection")
             launch_compute_metrics_anomaly_detection(args)
         """
         if step=="compute_metrics_thor_anomaly_detection" and rank==0:
-            print("Launching compute_metrics_thor_anomaly_detection")
+            tprint("Launching compute_metrics_thor_anomaly_detection")
             launch_compute_metrics_thor_anomaly_detection(args)
         """
+        if step=="anomaly_detection_inference" and rank==0:
+            tprint("Launching anomaly_detection_inference")
+            launch_anomaly_detection_inference(args)
+        
+        if step=="anomaly_detection_inference_no_abs_value" and rank==0:
+            tprint("Launching anomaly_detection_inference with no abs value for the anomaly maps")
+            launch_anomaly_detection_inference(args, no_abs_value=True)
+        
         
 
 
