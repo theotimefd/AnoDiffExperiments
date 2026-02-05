@@ -75,9 +75,9 @@ def launch_compute_metrics_reconstruction_diffusion(args):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.noise["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -233,7 +233,7 @@ def launch_compute_metrics_reconstruction_diffusion(args):
 
     # ----------- VISUALIZATION OF A BATCH -----------
 
-    infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+    infer_timesteps_visualize = int(args.noise["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
     for i,(image_batch) in enumerate(test_reconstruction_loader):
         if i>0:break
@@ -409,7 +409,7 @@ def launch_compute_metrics_reconstruction_diffusion(args):
         axes[5, idx].axis('off')
 
 
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.noise['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}", fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction_diffusion.png", transparent=False, dpi=150)

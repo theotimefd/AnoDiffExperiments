@@ -72,9 +72,9 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_INTERVAL = int(args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_INTERVAL = int(args.noise["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'

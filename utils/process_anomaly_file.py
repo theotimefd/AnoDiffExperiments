@@ -40,8 +40,7 @@ import utils.custom_transforms as custom_transforms
 import utils.simplex_ddpm as simplex_ddpm
 import utils.thor_ddpm as thor_ddpm
 from utils.utils import *
-
-from monai.metrics import compute_iou, DiceMetric
+import utils.scores as scores
 
 
 from scipy.ndimage import median_filter, binary_erosion, binary_dilation
@@ -55,9 +54,11 @@ DEVICE_TYPE = "cuda:0"
 def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder, 
                              thresholds_to_try, median_filter_sizes_to_try, 
                              erosion_dilation_iterations_to_try):
-    """Process a single anomaly file and return scores for all parameter combinations."""
+    """
+    Process a single raw anomaly file and return a dict with scores 
+    for all parameter combinations (median filter size, threshold, erosion/dilation).
+    """
     
-    dm = DiceMetric(reduction="sum")
 
     local_iou_scores = {}
     local_dice_scores = {}
@@ -81,26 +82,17 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
             filtered_maps[median_filter_size] = torch.from_numpy(filtered_np)
     
     
-    #tprint(f"computed median filtered for {anomaly_file}")
-
     # Iterate through all combinations efficiently
     for median_filter_size in median_filter_sizes_to_try:
         final_anomaly_map = filtered_maps[median_filter_size]
         
         
-        #tprint(f"median filter size {median_filter_size} for {anomaly_file}")
-        #tprint(f"next: thresholds to try: {thresholds_to_try}")
-
         for threshold in thresholds_to_try:
             ano_segmentation_base = (final_anomaly_map > threshold)
 
-            
-            #tprint(f"threshold {threshold} for {anomaly_file}")
-            
+                        
             for erosion_dilation_iterations in erosion_dilation_iterations_to_try:
 
-                
-                #tprint(f"erosion_dilation {erosion_dilation_iterations} for {anomaly_file}")
 
                 if erosion_dilation_iterations > 0:
                     ano_segmentation_np = ano_segmentation_base.cpu().numpy()
@@ -112,27 +104,16 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
                 else:
                     ano_segmentation = ano_segmentation_base
 
-                #tprint(f"computing iou score for {anomaly_file} ..")
+                
                 # ano_segmentation and masks must be in format : B1HWD
                 ano_segmentation = ano_segmentation.unsqueeze(0).unsqueeze(0)
                 
-
-                # Compute metrics
-                iou_score = compute_iou(ano_segmentation, mask)
-                flattened_iou_score = iou_score.cpu().numpy().flatten()
-                flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)]
-
-                #tprint(f"computing dice score for {anomaly_file} ..")
-                
-                dice_score = dm(ano_segmentation, mask).cpu().numpy().flatten()
-                dice_score = dice_score[~np.isnan(dice_score)]
-
+                iou_scores, dice_scores, hausdorff_distances, precision_scores, recall_scores, f1_scores = scores.compute_scores(ano_segmentation, mask)
 
                 # Store results
                 idx = (timesteps, threshold, median_filter_size, erosion_dilation_iterations)
-                local_iou_scores[idx] = np.sum(flattened_iou_score)
-                local_dice_scores[idx] = np.sum(dice_score)
+                local_iou_scores[idx] = np.sum(iou_scores)
+                local_dice_scores[idx] = np.sum(dice_scores)
     
-    #tprint(f"finished for {anomaly_file} ..")
-
+    
     return local_iou_scores, local_dice_scores

@@ -1,35 +1,22 @@
-
-
-### compute_metrics_reconstruction
-if the validation set is in 2D: it will noise the 2D image, denoise it with the ddpm and compute image similarity metrics (psnr, ssim, mse & lpips)
-if the validation set is in 3D, it will noise the 3D image, and denoise it slice by slice using the 2D ddpm and compute image similarity metrics
-
-### compute_metrics_anomaly_detection
-pass
-
-### config.json
 {
-    "experiment_name": "experiment_1",
-    "sub_experiment_name": "exp_1_0",
-    "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["compute_metrics_reconstruction"]
-        **list of steps to exectute. "train_ddpm" : 2d ddpm with single slice validation**
-                                     **"train_ddpm_full_volume": 2d ddpm with whole volume validation slice by slice**
-                                     **"compute_metrics_reconstruction"**
-                                     **"compute_metrics_anomaly_detection"**
-                                     **"compute_metrics_thor_anomaly_detection**
+    "experiment_name": "experiment_2",
+    "sub_experiment_name": "exp_2_2",
+    "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
+    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
-    "spatial_dims_val_test": 3 **2 for single slice validation & test (metrics recons & ano detec), 3 for full volume slice by slice validation & test (metrics recons & ano detec)**
+    "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_flair_dataset_small_added_oasis", **name of the dataset for train, val and test_reconstruction**
-        "test": "brats", **name of the dataset for anomaly detection**
+        "name": "final_adc_dataset_small_added_ixi",
+        "test": "soop",
+        "save_anomaly_maps":true,
         "batch_size": 16,
         "num_workers": 16,
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
+    "show_summary_figures": true,
     "slice_indexes_start":22,
     "slice_indexes_end": 94,
     "train_transforms": {
@@ -44,9 +31,8 @@ pass
         {
             "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
         },
-        { **makes sure the peak of intensities from the histogram is always at the same value**
-          **! do it on the whole volume before selecting a slice !**
-            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+        {
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
         },
         {
             "_target_": "utils.custom_transforms.Get2DSliceFromIndexes", "axis": 2, "indexes_start": "@slice_indexes_start", "indexes_end": "@slice_indexes_end"
@@ -80,7 +66,7 @@ pass
                 "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
             },
             {
-                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
+                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
             },
             {
                 "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
@@ -91,14 +77,18 @@ pass
         ]
     },
     "noise": {
-        "type": "simplex",
+        "type": "gaussian",
         "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
         "normalize": false,
         "num_timesteps_full_noise": 1000,
-        "noise_rate_train_and_infer": 0.35
+        "noise_rate_train_and_infer": 0.35,
+        "noise_rate_min": 0.05,
+        "noise_rate_max": 0.25,
+        "noise_timesteps_interval": 10,
+        "noise_rate_visualize":0.1
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -119,6 +109,11 @@ pass
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
-        "ema":true
+        "ema":false
+    },
+    "anomaly_detection_param_search":{
+        "median_filter_sizes": [-1, 3, 5, 7, 10],
+        "thresholds": [0.02, 0.04, 0.06, 0.08, 0.1],
+        "erosion_dilation_iterations": [0, 1, 2, 4, 6, 8]
     }
 }

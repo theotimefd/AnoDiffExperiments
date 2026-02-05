@@ -25,8 +25,6 @@ import random
 
 import nibabel as nib
 
-from monai.inferers import DiffusionInferer
-from monai.networks.nets import DiffusionModelUNet
 from monai.networks.schedulers import DDPMScheduler
 
 
@@ -39,8 +37,6 @@ import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import *
-
-from monai.metrics import compute_iou
 
 from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
@@ -86,9 +82,9 @@ def launch_compute_metrics_reconstruction(args):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.noise["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -239,7 +235,7 @@ def launch_compute_metrics_reconstruction(args):
 
 
     # ----------- VISUALIZATION OF A BATCH -----------
-    infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+    infer_timesteps_visualize = int(args.noise["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
 
     for i,(image_batch) in enumerate(test_reconstruction_loader):
@@ -292,7 +288,7 @@ def launch_compute_metrics_reconstruction(args):
         if args.noise["normalize"]:
             #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
             axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=0, vmax=1)
-            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.noise["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
             axes[1, idx*2].axis('off')
 
             axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
@@ -301,7 +297,7 @@ def launch_compute_metrics_reconstruction(args):
         else:
             #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
             axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
-            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
+            axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.noise["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
             axes[1, idx*2].axis('off')
 
             axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
@@ -451,7 +447,7 @@ def launch_compute_metrics_reconstruction(args):
         axes[5, idx].axis('off')
 
 
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.compute_metrics_reconstruction['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.noise['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
 
 
     plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)

@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_5",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_metrics_reconstruction_ae", "train_diffusion", "compute_metrics_reconstruction_diffusion", "compute_metrics_anomaly_detection_diffusion"],
+    "pipeline": ["compute_metrics_anomaly_detection_diffusion"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 8,
@@ -77,6 +77,10 @@
         "normalize": false,
         "num_timesteps_full_noise": 1000,
         "noise_rate_train_and_infer": 0.35,
+        "noise_rate_min": 0.01,
+        "noise_rate_max": 0.1,
+        "noise_timesteps_interval": 10,
+        "noise_rate_visualize":0.03,
         "beta_start": 0.0015,
         "beta_end": 0.0195
     },
@@ -148,34 +152,10 @@
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
         "ema":false
-    },
-    "compute_metrics_reconstruction":{
-        "transforms": {
-            "transform_0":{
-                "_target_": "transforms.LoadImage", "image_only": true
-            },
-            "transform_1":{
-                "_target_": "transforms.EnsureChannelFirst"
-            },
-            "transform_3":{
-                "_target_": "custom_transforms.Get2DSlice", "axis": 2
-            },
-            "transform_5":{
-                "_target_": "transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
-            },
-            "transform_6":{
-                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
-            },
-            "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
-            },
-            "transform_9":{
-                "_target_": "custom_transforms.SetBackgroundToZero"
-            }
-        },
-        "noise_rate_min": 0.01,
-        "noise_rate_max": 0.1,
-        "noise_timesteps_interval": 10,
-        "noise_rate_visualize":0.03
+    },    
+    "anomaly_detection_param_search":{
+        "median_filter_sizes": [-1],
+        "thresholds": [0.04, 0.06],
+        "erosion_dilation_iterations": [0, 1]
     }
 }

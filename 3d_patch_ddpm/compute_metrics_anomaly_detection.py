@@ -39,6 +39,8 @@ import pandas as pd
 import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
+import utils.scores as scores
+
 from utils.utils import *
 from make_anomaly_maps import make_anomaly_maps
 from make_anomaly_maps_optim import make_anomaly_maps_optim, _run_patchwise_test_optim
@@ -157,71 +159,6 @@ def _create_patch_weight(patch_size: Sequence[int], sigma_scale: float = 0.125) 
     return weight
 
 
-def _run_patchwise_test(
-    volume: torch.Tensor,
-    patch_size: Sequence[int],
-    overlap: Sequence[int],
-    patch_batch_size: int,
-    noise_type: str,
-    simplexObj,
-    model,
-    infer_scheduler,
-    num_timesteps: int,
-    device,
-):
-    aggregator_pred = torch.zeros_like(volume, dtype=torch.float32)
-    weight_sum = torch.zeros_like(volume, dtype=torch.float32)
-    patch_queue: List[torch.Tensor] = []
-    slice_queue: List[Tuple[slice, slice, slice]] = []
-    total_patches = 0
-    
-    # Create weight map for smooth blending
-    patch_weight = _create_patch_weight(patch_size).to(device)
-    """
-    Same as _run_patchwise_inference but goes all the way to the fully denoised image
-    Uses weighted averaging to eliminate seam artifacts at patch boundaries.
-    """
-
-    def _flush_queue():
-        nonlocal total_patches
-
-        if not patch_queue:
-            return
-        
-        batch_tensor = torch.cat(patch_queue, dim=0) # transforms all the patches into a single batch tensor
-
-        preds = my_sample(model, device, noise_type, simplexObj, batch_tensor, infer_scheduler, num_timesteps)
-
-        patch_count = batch_tensor.shape[0]
-        total_patches += patch_count
-
-        for idx, patch_slices in enumerate(slice_queue):
-            target_slice = (slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])
-            
-            # Apply weighted contribution instead of simple addition
-            aggregator_pred[target_slice] += preds[idx].unsqueeze(0).float() * patch_weight
-            weight_sum[target_slice] += patch_weight  # Accumulate weights instead of counts
-
-
-        patch_queue.clear()
-        slice_queue.clear()
-
-    for patch_slices in _generate_patch_slices(volume.shape[-3:], patch_size, overlap): # goes through the slices that define each patch
-
-        patch = volume[(slice(None), slice(None), patch_slices[0], patch_slices[1], patch_slices[2])] # extracts the patch using the slices
-
-        patch_queue.append(patch) # patch_queue stores all the patches for the current volume batch
-        slice_queue.append(patch_slices)
-
-        if len(patch_queue) >= patch_batch_size: # makes sure there aren't too many patches at one time (memory issues)
-            _flush_queue() # does the inference and computes loss
-
-    _flush_queue()
-
-    weight_sum = torch.clamp(weight_sum, min=1e-8)
-    stitched_pred = aggregator_pred / weight_sum  # Weighted average for smooth blending
-
-    return stitched_pred
 
 def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder, 
                              thresholds_to_try, median_filter_sizes_to_try, 
@@ -339,7 +276,7 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
         erosion_dilation_iterations_to_try=erosion_dilation_iterations_to_try,
     )
 
-    max_workers = min(32, mp.cpu_count())
+    max_workers = min(48, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#gpu-nodes
     ctx = mp.get_context("spawn")
 
     if len(anomaly_files) == 1 or max_workers == 1:
@@ -543,10 +480,11 @@ def show_summary_figure(args, device, model, infer_scheduler, image_loader, mask
         # Thresholded difference images
         thresholded_difference_image = (final_anomaly_map > threshold)#.astype(np.float32)
         ano_segmentation_np = thresholded_difference_image
-        """if erosion_dilation_iterations_visualize > 0: #TODO
-            ano_segmentation_np = thresholded_difference_image
-            ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)
-            ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations_visualize).astype(ano_segmentation_np.dtype)"""
+
+        if erosion_dilation_iterations > 0:
+            ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations).astype(ano_segmentation_np.dtype)
+            ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations).astype(ano_segmentation_np.dtype)
+
 
         axes[3, idx*2].imshow(ano_segmentation_np, cmap='gray', vmin=0, vmax=1)
         axes[3, idx*2].set_title(f'Thresholded Difference {idx+1}, erosion-dilation steps: {erosion_dilation_iterations}')
@@ -593,30 +531,29 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
         erosion_iterations: number of erosion iterations to apply to the anomaly segmentation, use 0 to not apply any erosion
         dilation_iterations: number of dilation iterations to apply to the anomaly segmentation, use 0 to not apply any dilation
     output:
-        mean_iou: mean IOU score
-        std_iou: std IOU score
-        mean_dice: mean DICE score
-        std_dice: std DICE score
+            final_scores: a dictionary containing the mean and confidence intervals for each metric, with the following format:
+            {
+                "iou": [mean_iou, lower_iou, upper_iou],
+                "dice": [mean_dice, lower_dice, upper_dice],
+                "hausdorff": [mean_hausdorff, lower_hausdorff, upper_hausdorff],
+                "precision": [mean_precision, lower_precision, upper_precision],
+                "recall": [mean_recall, lower_recall, upper_recall],
+                "f1": [mean_f1, lower_f1, upper_f1]
+            }
     """
-    infer_patch_size = args.patch_size
-    patch_overlap = args.dataset["patch_overlap"]
-
-    patch_infer_batch_size = args.dataset["batch_size"]
-    
-    dm = DiceMetric(reduction="sum")
     
     iou_scores = []
     dice_scores = []
-
-    basic_affine = nib.load(image_paths[0]).affine
+    hausdorff_distances = []
+    precision_scores = []
+    recall_scores = []
+    f1_scores = []
 
     no_masks = False
     if mask_loader is None:
         mask_loader = image_loader # hack so the for loop works
         no_masks = True
-    #tprint(f"launching comute metrics with timesteps={timesteps}, threshold={threshold}, median_filter_size={median_filter_size}, erosion_dilation_iterations={erosion_dilation_iterations}")
-    #tprint(f"len(image_loader.dataset)={len(image_loader.dataset)}")
-    #tprint(f"len(mask_loader.dataset)={len(mask_loader.dataset)}")
+
     
     simplexObj = None
 
@@ -677,28 +614,41 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
                 ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
             
 
-            iou_score = compute_iou(ano_segmentation, test_masks)
-            flattened_iou_score = iou_score.cpu().numpy().flatten()
-            #tprint(f"flattened_iou_score (before removing nan values): {flattened_iou_score}")
-            flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
-
-            iou_scores.append(flattened_iou_score)
-
-            dice_score = dm(ano_segmentation, test_masks).cpu().numpy().flatten()
-            #tprint(f"flattened_dice_score (before removing nan values): {dice_score}")
-            dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-            dice_scores.append(dice_score)
+            iou_scores_batch, dice_scores_batch, hausdorff_distances_batch, precision_scores_batch, recall_scores_batch, f1_scores_batch = scores.compute_scores(ano_segmentation, test_masks)
 
     if no_masks:
         return
 
-    mean_iou = np.mean(np.concatenate(iou_scores))
-    std_iou = np.std(np.concatenate(iou_scores))
+    # put all the batch score lists into one big list
+    iou_scores.append(iou_scores_batch)
+    dice_scores.append(dice_scores_batch)
+    hausdorff_distances.append(hausdorff_distances_batch)
+    precision_scores.append(precision_scores_batch)
+    recall_scores.append(recall_scores_batch)
+    f1_scores.append(f1_scores_batch)
 
-    mean_dice = np.mean(np.concatenate(dice_scores))
-    std_dice = np.std(np.concatenate(dice_scores))
+    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.concatenate(iou_scores))
+    
+    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.concatenate(dice_scores))
 
-    return mean_iou, std_iou, mean_dice, std_dice
+    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.concatenate(hausdorff_distances))
+
+    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.concatenate(precision_scores))
+
+    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.concatenate(recall_scores))
+    
+    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.concatenate(f1_scores))
+
+    final_scores = {
+        "iou": [np.round(mean_iou, 4), np.round(lower_iou, 4), np.round(upper_iou, 4)],
+        "dice": [np.round(mean_dice, 4), np.round(lower_dice, 4), np.round(upper_dice, 4)],
+        "hausdorff": [np.round(mean_hausdorff, 4), np.round(lower_hausdorff, 4), np.round(upper_hausdorff, 4)],
+        "precision": [np.round(mean_precision, 4), np.round(lower_precision, 4), np.round(upper_precision, 4)],
+        "recall": [np.round(mean_recall, 4), np.round(lower_recall, 4), np.round(upper_recall, 4)],
+        "f1": [np.round(mean_f1, 4), np.round(lower_f1, 4), np.round(upper_f1, 4)]
+    }
+
+    return final_scores
 
 
 def launch_compute_metrics_anomaly_detection(args):
@@ -733,9 +683,9 @@ def launch_compute_metrics_anomaly_detection(args):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_INTERVAL = int(args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_INTERVAL = int(args.noise["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -1014,9 +964,9 @@ def launch_compute_metrics_anomaly_detection(args):
 
 
     num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-    thresholds_to_try = np.arange(0.0, 0.2, 0.02) # from 0.0 to 0.2 with step 0.02
-    median_filter_sizes_to_try = [-1, 3, 5] # -1 means no median filter
-    erosion_dilation_iterations_to_try = [0, 1, 2]
+    median_filter_sizes_to_try = args.anomaly_detection_param_search["median_filter_sizes"]
+    thresholds_to_try = args.anomaly_detection_param_search["thresholds"]
+    erosion_dilation_iterations_to_try = args.anomaly_detection_param_search["erosion_dilation_iterations"]
 
     if args.dataset["test"] == "brats":
         for timesteps in num_timesteps_to_try:
@@ -1031,10 +981,10 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_loader_metrics, test_anomaly_images_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_loader_metrics, test_anomaly_images_metrics, test_masks_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
-        metrics_result_text = f"mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps}\n"
@@ -1082,10 +1032,11 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, timesteps=best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
-        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Large group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
         metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
@@ -1124,10 +1075,11 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
-        metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Medium group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
         metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
@@ -1149,10 +1101,11 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_small_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, timesteps=best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
-        metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Small group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
@@ -1185,10 +1138,11 @@ def launch_compute_metrics_anomaly_detection(args):
 
         tprint(f"Best params large group: {best_params}")
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, test_anomaly_large_loader_metrics, test_anomaly_large_images_metrics, test_masks_large_loader_metrics, best_num_timesteps_large_group, threshold=best_threshold_large_group, median_filter_size=best_median_filter_size_large_group, erosion_dilation_iterations=best_erosion_dilation_iterations_large_group)
 
         
-        metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Large group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
         metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
@@ -1227,10 +1181,11 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_medium_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, test_anomaly_medium_loader_metrics, test_anomaly_medium_images_metrics, test_masks_medium_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
-        metrics_result_text += f"Medium group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Medium group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
         metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
@@ -1253,10 +1208,10 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_small_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, test_anomaly_small_loader_metrics, test_anomaly_small_images_metrics, test_masks_small_loader_metrics, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
-        
-        metrics_result_text += f"Small group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
+        metrics_result_text = "Small group\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
 
         
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
@@ -1280,11 +1235,11 @@ def launch_compute_metrics_anomaly_detection(args):
         best_params = iou_scores_df_large_group.idxmax()['IOU']
         best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations = best_params
 
-        mean_iou, std_iou, mean_dice, std_dice = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images_metrics, test_masks_large_loader_metrics_small, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
+        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, test_anomaly_large_loader_metrics_small, test_anomaly_large_images_metrics, test_masks_large_loader_metrics_small, best_num_timesteps, threshold=best_threshold, median_filter_size=best_median_filter_size, erosion_dilation_iterations=best_erosion_dilation_iterations)
 
         
-        metrics_result_text = f"soop_fast: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
-
+        metrics_result_text = f"soop_fast:\n"
+        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
         
         metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
         metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "

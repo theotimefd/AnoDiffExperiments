@@ -2,7 +2,7 @@
     "experiment_name": "experiment_3",
     "sub_experiment_name": "exp_3_2",
     "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["anomaly_detection_inference_no_abs_value"],
+    "pipeline": ["compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -77,14 +77,18 @@
         ]
     },
     "noise": {
-        "type": "simplex",
+        "type": "gaussian",
         "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
         "simplex_frequency":64,
         "normalize": false,
         "num_timesteps_full_noise": 1000,
-        "noise_rate_train_and_infer": 0.35
+        "noise_rate_train_and_infer": 0.35,
+        "noise_rate_min": 0.05,
+        "noise_rate_max": 0.25,
+        "noise_timesteps_interval": 10,
+        "noise_rate_visualize":0.1
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -107,33 +111,9 @@
         "lr_scheduler_milestones": [1000],
         "ema":false
     },
-    "compute_metrics_reconstruction":{
-        "transforms": {
-            "transform_0":{
-                "_target_": "transforms.LoadImage", "image_only": true
-            },
-            "transform_1":{
-                "_target_": "transforms.EnsureChannelFirst"
-            },
-            "transform_3":{
-                "_target_": "custom_transforms.Get2DSlice", "axis": 2
-            },
-            "transform_5":{
-                "_target_": "transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
-            },
-            "transform_6":{
-                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
-            },
-            "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
-            },
-            "transform_9":{
-                "_target_": "custom_transforms.SetBackgroundToZero"
-            }
-        },
-        "noise_rate_min": 0.05,
-        "noise_rate_max": 0.30,
-        "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.2
+    "anomaly_detection_param_search":{
+        "median_filter_sizes": [-1, 3, 5, 7, 10],
+        "thresholds": [0.02, 0.04, 0.06, 0.08, 0.1],
+        "erosion_dilation_iterations": [0, 1, 2, 4, 6, 8]
     }
 }

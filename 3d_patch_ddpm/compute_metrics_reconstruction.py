@@ -241,10 +241,10 @@ def launch_compute_metrics_reconstruction(args):
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    #NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
-    NOISE_RANGE = range(NOISE_MAX,NOISE_MIN,-args.compute_metrics_reconstruction["noise_timesteps_interval"]) # reverse to see more noisy images first
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    #NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.noise["noise_timesteps_interval"])
+    NOISE_RANGE = range(NOISE_MAX,NOISE_MIN,-args.noise["noise_timesteps_interval"]) # reverse to see more noisy images first
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
