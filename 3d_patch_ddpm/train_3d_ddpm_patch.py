@@ -447,13 +447,17 @@ def launch_train_patch(args):
 
     model = define_instance(args, "network_def").to(device)
     last_epoch = 0
+    best_val_loss = np.inf
+    best_val_epoch = 0
     
     if args.diffusion_train.get("resume_checkpoint", False) == True:
     
         last_epoch = args.diffusion_train.get("last_checkpoint_epoch", None)
-        
+        best_val_loss = args.diffusion_train.get("last_best_val_loss", np.inf)
+        best_val_epoch = last_epoch
         model.load_state_dict(torch.load(MODELS_DIR+f"{SUB_EXPERIMENT_NAME}_best_model.pth", map_location=f"cuda:{device}"))
-        
+    
+
     simplexObj = None
     if args.noise["type"] == "simplex":
         simplexObj = simplex.Simplex_CLASS()
@@ -491,14 +495,12 @@ def launch_train_patch(args):
     max_epochs = args.diffusion_train["max_epochs"]
     val_interval = args.diffusion_train["val_interval"]
 
-    best_val_epoch_loss = np.inf
-    best_val_epoch = 0
-
     scaler = GradScaler("cuda")
 
-
     for epoch in range(last_epoch, max_epochs):
+
         model.train()
+
         if rank==0 and args.diffusion_train["lr_scheduler"] != "none":
             lr_scheduler.step()
         if ddp_bool:
@@ -507,9 +509,7 @@ def launch_train_patch(args):
             val_loader.sampler.set_epoch(epoch)
 
         epoch_loss = 0
-        #progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
-        #progress_bar.set_description(f"Epoch {epoch}")
-
+        
         #for step, batch in progress_bar:
         for step, batch in enumerate(train_loader):
             images = batch.to(device, non_blocking=True) #TODO: check non_blocking (21/09/2025)
@@ -536,7 +536,7 @@ def launch_train_patch(args):
         if (epoch + 1) % val_interval == 0:
             model.eval()
 
-            val_epoch_loss = 0.0
+            val_loss = 0.0
             total_val_volumes = 0
             with torch.no_grad():
                 for step, batch in enumerate(val_loader):
@@ -555,24 +555,16 @@ def launch_train_patch(args):
                         device,
                         collect_output=True
                     )
-                    val_epoch_loss += batch_loss
+                    val_loss += batch_loss
                     total_val_volumes += processed
-            avg_val_loss = val_epoch_loss / max(total_val_volumes, 1)
-
             
-            if rank == 0 and stitched_pred is not None and len(stitched_pred) > 0:
-                # Take the first volume from stitched_pred and a middle slice
-                sample_volume = stitched_pred[0, 0]*2+0.5 # Shape: [D, H, W]
-
-                writer.add_image(f"stitched_pred_sample D", sample_volume[sample_volume.shape[0]//2,...].cpu().numpy(), epoch, dataformats="HW")
-                writer.add_image(f"stitched_pred_sample H", sample_volume[:,sample_volume.shape[1]//2,:].cpu().numpy(), epoch, dataformats="HW")
-                writer.add_image(f"stitched_pred_sample W", sample_volume[...,sample_volume.shape[2]//2].cpu().numpy(), epoch, dataformats="HW")
-
+            avg_val_loss = val_loss / max(total_val_volumes, 1)
+            
             if rank==0:
                 writer.add_scalar("val_loss", avg_val_loss, epoch)
 
-                if avg_val_loss < best_val_epoch_loss:
-                    best_val_epoch_loss = avg_val_loss
+                if avg_val_loss < best_val_loss:
+                    best_val_loss = avg_val_loss
                     best_val_epoch = epoch + 1
 
                     if ddp_bool:
@@ -583,13 +575,13 @@ def launch_train_patch(args):
                     tprint("saved new best metric model")
                     tprint(
                         f"current epoch: {epoch + 1} current val loss: {avg_val_loss:.4f}"
-                        f"\nbest val loss: {best_val_epoch_loss:.4f}"
+                        f"\nbest val loss: {best_val_loss:.4f}"
                         f" at epoch: {best_val_epoch}"
                     )
-                    writer.add_scalar("best_val_loss", best_val_epoch_loss, best_val_epoch)
+                    writer.add_scalar("best_val_loss", best_val_loss, best_val_epoch)
 
 
         
-    tprint(f"Training complete, best val loss: {best_val_epoch_loss:.6f} at epoch {best_val_epoch}")
+    tprint(f"Training complete, best val loss: {best_val_loss:.6f} at epoch {best_val_epoch}")
     
     

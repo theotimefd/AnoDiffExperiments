@@ -1,9 +1,9 @@
 {
     "experiment_name": "experiment_3",
-    "sub_experiment_name": "exp_3_2",
-    "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["compute_select_params_cpu"],
-    "spatial_dims": 2,
+    "sub_experiment_name": "exp_3_4",
+    "description": "3D patch DDPM on flair with simplex noise",
+    "pipeline": ["train_ddpm", "compute_metrics_anomaly_detection"],
+    "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
@@ -11,11 +11,14 @@
         "name": "final_flair_dataset_small_added_oasis",
         "test": "soop",
         "save_anomaly_maps":true,
-        "batch_size": 16,
-        "num_workers": 16,
+        "batch_size": 64,
+        "patch_batch_size":128,
+        "patch_overlap": [16, 16, 16],
+        "num_workers": 2,
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
+    "patch_size": [64, 64, 64],
     "show_summary_figures": true,
     "slice_indexes_start":22,
     "slice_indexes_end": 94,
@@ -35,13 +38,10 @@
             "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
         },
         {
-            "_target_": "utils.custom_transforms.Get2DSliceFromIndexes", "axis": 2, "indexes_start": "@slice_indexes_start", "indexes_end": "@slice_indexes_end"
-        },
-        {
             "_target_": "monai.transforms.RandScaleCrop", "roi_scale":0.9, "max_roi_scale":1.1, "random_size":true
         },
         {
-            "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
+            "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
         },
         {
             "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
@@ -51,7 +51,11 @@
         },
         {
             "_target_": "utils.custom_transforms.SetBackgroundToZero"
-        }]
+        },
+        {
+            "_target_": "monai.transforms.RandSpatialCrop", "roi_size": "@patch_size", "random_size": false
+        }
+    ]
     },
     "val_transforms": {
         "_target_": "monai.transforms.Compose",
@@ -101,8 +105,11 @@
         "use_flash_attention":true
     },
     "diffusion_train": {
-        "max_epochs": 6000,
+        "max_epochs": 300,
         "val_interval": 10,
+        "resume_checkpoint": true,
+        "last_checkpoint_epoch":230,
+        "last_best_val_loss":0.007508,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5

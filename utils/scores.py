@@ -1,7 +1,7 @@
 import numpy as np
 from monai.metrics import compute_hausdorff_distance, DiceMetric, compute_iou
 
-def compute_scores(y_pred, y_true):
+def compute_scores(y_pred, y_true, only_dice_iou=False):
     """
     Compute various segmentation metrics between predicted and ground truth masks.
     This function calculates multiple metrics to evaluate the quality of segmentation predictions,
@@ -49,6 +49,9 @@ def compute_scores(y_pred, y_true):
     dice_score = dice_metric(y_pred, y_true).cpu().numpy().flatten()
     dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
     dice_scores.append(dice_score)
+
+    if only_dice_iou:
+        return iou_scores, dice_scores, [], [], [], []
 
     # Hausdorff Distance
     hausdorff_distance = compute_hausdorff_distance(y_pred, y_true)

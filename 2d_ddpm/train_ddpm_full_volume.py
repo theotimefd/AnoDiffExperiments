@@ -182,7 +182,17 @@ def launch_train_full_volume(args):
             milestones=args.diffusion_train["lr_scheduler_milestones"],
             gamma=0.1)
 
+    last_epoch = 0
+    best_val_loss = np.inf
+    best_val_epoch = 0
 
+    if args.diffusion_train.get("resume_checkpoint", False) == True:
+    
+        last_epoch = args.diffusion_train.get("last_checkpoint_epoch", None)
+        best_val_loss = args.diffusion_train.get("last_best_val_loss", np.inf)
+        best_val_epoch = args.diffusion_train.get("last_checkpoint_epoch", 0)
+        model.load_state_dict(torch.load(MODELS_DIR+f"{SUB_EXPERIMENT_NAME}_best_model.pth", map_location=f"cuda:{device}"))
+                
 
     inferer = DiffusionInferer(scheduler)
 
@@ -198,13 +208,11 @@ def launch_train_full_volume(args):
     max_epochs = args.diffusion_train["max_epochs"]
     val_interval = args.diffusion_train["val_interval"]
 
-    best_val_epoch_loss = np.inf
-    best_val_epoch = 0
 
     scaler = GradScaler("cuda")
 
 
-    for epoch in range(max_epochs):
+    for epoch in range(last_epoch, max_epochs):
         model.train()
         if rank==0 and args.diffusion_train["lr_scheduler"] != "none":
             lr_scheduler.step()
@@ -245,6 +253,7 @@ def launch_train_full_volume(args):
         if (epoch + 1) % val_interval == 0:
             model.eval()
             val_epoch_loss = 0
+            val_loss = 0
             for step, batch in enumerate(val_loader):
                 images = batch.to(device)
                 
@@ -258,15 +267,17 @@ def launch_train_full_volume(args):
                         val_loss = compute_loss_gaussian(images[..., slice_idx], model, inferer, int(args.noise["noise_rate_train_and_infer"]*args.noise["num_timesteps_full_noise"]), device)
 
                     val_epoch_loss += val_loss.item()
+            
+            val_loss = val_epoch_loss / (step + 1)
 
                 #progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             
             if rank==0:
                 
-                writer.add_scalar("val_loss", val_epoch_loss / (step + 1), epoch)
+                writer.add_scalar("val_loss", val_loss, epoch)
 
-                if val_epoch_loss < best_val_epoch_loss:
-                    best_val_epoch_loss = val_epoch_loss
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
                     best_val_epoch = epoch + 1
 
                     if ddp_bool:
@@ -276,24 +287,12 @@ def launch_train_full_volume(args):
 
                     print("saved new best metric model")
                     print(
-                        f"current epoch: {epoch + 1} current val loss: {val_epoch_loss/(step + 1):.4f}"
-                        f"\nbest val loss: {best_val_epoch_loss/(step + 1):.4f}"
+                        f"current epoch: {epoch + 1} current val loss: {val_loss:.4f}"
+                        f"\nbest val loss: {best_val_loss:.4f}"
                         f" at epoch: {best_val_epoch}"
                     )
-                    writer.add_scalar("best_val_loss", best_val_epoch_loss/(step + 1), best_val_epoch)
+                    writer.add_scalar("best_val_loss", best_val_loss, best_val_epoch)
 
-                    # can't visualize an inference image since we don't train from pure noise here
-                    #noise = generate_simplex_noise(simplexObj, shape=(1,1,IMAGE_SIZE, IMAGE_SIZE)).to(device)
-                    #noise = noise.to(device)
-                    #scheduler.set_timesteps(num_inference_steps=1000)
-                    #with autocast(device_type=DEVICE_TYPE, enabled=True):
-                    #    image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
-                    #writer.add_image("sampled_image", image[0, 0].cpu().numpy(), global_step=epoch, dataformats="HW")
-                    #plt.figure(figsize=(2, 2))
-                    #plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-                    #plt.tight_layout()
-                    #plt.axis("off")
-                    #plt.show()
         
-        tprint(f"Training complete, best val loss: {best_val_epoch_loss/(step + 1)} at epoch {best_val_epoch}")
+    tprint(f"Training complete, best val loss: {best_val_loss} at epoch {best_val_epoch}")
     

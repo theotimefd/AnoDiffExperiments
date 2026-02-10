@@ -22,6 +22,7 @@ from monai.data.utils import pad_list_data_collate
 from torch.amp import autocast
 from tqdm import tqdm
 import random
+import sample as sample
 
 import nibabel as nib
 
@@ -139,46 +140,6 @@ def launch_compute_metrics_reconstruction(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
 
-    @torch.no_grad()
-    def my_sample(image, infer_scheduler, timesteps, return_intermediates=False):
-        
-        simplexObj = simplex.Simplex_CLASS()
-
-        if args.noise["type"] == "simplex":
-            noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=args.noise["normalize"]).to(device)
-        if args.noise["type"] == "gaussian":
-            noise = torch.randn(image.shape).to(device)
-        
-
-        if timesteps >= infer_scheduler.num_train_timesteps:
-            tprint(f"{timesteps} is too high. Setting to {infer_scheduler.num_train_timesteps-1}")
-
-        timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
-
-        image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
-
-
-        intermediates = []
-        intermediates_step = 20
-
-                
-        for t in range(timesteps, 0, -1): # va de timesteps à 0
-            
-            model_output = model(
-                image, timesteps=torch.Tensor((t,)).to(device), context=None
-            )
-            #print(model_output.shape)
-            
-            image, _ = infer_scheduler.step(model_output, t, image)
-        
-            if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
-                intermediates.append(image)
-
-        if return_intermediates:
-            return image, intermediates
-        else:
-            return image
-
     # ----------- COMPUTING METRICS -----------
 
     ssim_metric = SSIMMetric(spatial_dims=2, data_range=1.0)
@@ -206,7 +167,7 @@ def launch_compute_metrics_reconstruction(args):
                 
                 if len(image_batch.shape)==4: # 2D slices
                     
-                    infered = my_sample(test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                    infered = sample.my_sample(args, model, device, test_reconstruction_images, infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
                     infered = torch.clamp(scale_intensity_from_histogram_peak(infered, 2.0/7.0), 0.0, 1.0)
 
                     mse[noise_timesteps].append(F.mse_loss(infered, test_reconstruction_images).detach().cpu().numpy().flatten())
@@ -220,7 +181,7 @@ def launch_compute_metrics_reconstruction(args):
                     lpips_volume = [] 
 
                     for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                        infered_slice = my_sample(test_reconstruction_images[...,slice_idx], infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
+                        infered_slice = sample.my_sample(args, model, device, test_reconstruction_images[...,slice_idx], infer_scheduler, timesteps=noise_timesteps, return_intermediates=False)
                         lpips_volume.append(np.mean(loss_fn_lpips.forward(infered_slice.to(device), test_reconstruction_images[...,slice_idx]).detach().cpu().numpy().flatten())) # since lpips only works for 2D images
                         infered_slices.append(infered_slice.unsqueeze(-1))
 
@@ -248,7 +209,7 @@ def launch_compute_metrics_reconstruction(args):
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
-            infered, intermediates = my_sample(test_reconstruction_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=True)
+            infered, intermediates = sample.my_sample(args, model, device, test_reconstruction_images, infer_scheduler, timesteps=infer_timesteps_visualize, return_intermediates=True)
             first_noisy_images = intermediates[0]
 
     # ----------- PLOT -----------

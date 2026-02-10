@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_4",
     "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["anomaly_detection_inference_no_abs_value"],
+    "pipeline": ["compute_metrics_reconstruction"],
     "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -88,7 +88,11 @@
         "simplex_frequency":64,
         "normalize": false,
         "num_timesteps_full_noise": 1000,
-        "noise_rate_train_and_infer": 0.35
+        "noise_rate_train_and_infer": 0.35,
+        "noise_rate_min": 0.05,
+        "noise_rate_max": 0.25,
+        "noise_timesteps_interval": 20,
+        "noise_rate_visualize":0.25
     },
     "network_def": {
         "_target_": "monai.networks.nets.DiffusionModelUNet",
@@ -101,42 +105,17 @@
         "use_flash_attention":true
     },
     "diffusion_train": {
-        "max_epochs": 6000,
+        "max_epochs": 600,
         "val_interval": 10,
+        "resume_checkpoint": false,
+        "last_checkpoint_epoch":2699,
+        "last_best_val_loss":0.4525,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
-        "ema":false,
-        "resume_checkpoint": true,
-        "last_checkpoint_epoch": 160
-    },
-    "compute_metrics_reconstruction":{
-        "transforms": {
-            "transform_0":{
-                "_target_": "transforms.LoadImage", "image_only": true
-            },
-            "transform_1":{
-                "_target_": "transforms.EnsureChannelFirst"
-            },
-            "transform_5":{
-                "_target_": "transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
-            },
-            "transform_6":{
-                "_target_": "custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
-            },
-            "transform_7":{
-                "_target_": "transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
-            },
-            "transform_9":{
-                "_target_": "custom_transforms.SetBackgroundToZero"
-            }
-        },
-        "noise_rate_min": 0.05,
-        "noise_rate_max": 0.25,
-        "noise_timesteps_interval": 50,
-        "noise_rate_visualize":0.2
+        "ema":false
     }
 }

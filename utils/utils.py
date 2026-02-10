@@ -49,7 +49,12 @@ def visualize_one_slice_in_3d_image(image, axis: int = 2):
     return draw_img
 
 def tprint(text):
+    # print with time only
     print(f"[{time.strftime('%H:%M:%S')}] {text}")
+
+def dtprint(text):
+    # print with date and time
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}")
 
 
 def scale_intensity_from_histogram_peak(input_image, target_value=1.0):

@@ -56,7 +56,7 @@ import multiprocessing as mp
 DEVICE_TYPE = "cuda:0"
 
 
-def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder, total_nb_images, num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try):
+def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder, total_nb_images, num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try):
     # takes an input folder with all the saved infered 3D anomaly maps 
     # and tests different combinations of post-processing and returns and saves a table with all the scores for each set of parameters
 
@@ -64,15 +64,15 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
     
 
     # Create the MultiIndex from timesteps, thresholds, median filter sizes, erosion and dilation iterations
-    iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
+    iou_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try])
     iou_scores_df = pd.DataFrame(index=iou_scores_midx, columns=["IOU"])
     iou_scores_df.fillna(0.0, inplace=True)
-    iou_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
+    iou_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations', 'binary_fill_holes']
 
-    dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try])
+    dice_scores_midx = pd.MultiIndex.from_product([num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try])
     dice_scores_df = pd.DataFrame(index=dice_scores_midx, columns=["DICE"])
     dice_scores_df.fillna(0.0, inplace=True)
-    dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations']
+    dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations', 'binary_fill_holes']
     
 
 
@@ -81,7 +81,7 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
         raise RuntimeError(f"No anomaly map files found in '{anomaly_maps_folder}'.")
 
     process_func = partial(
-        process_anomaly_file,
+        process_anomaly_file.process_anomaly_file,
         anomaly_maps_folder=anomaly_maps_folder,
         masks_folder=masks_folder,
         thresholds_to_try=thresholds_to_try,
@@ -89,7 +89,7 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
         erosion_dilation_iterations_to_try=erosion_dilation_iterations_to_try,
     )
 
-    max_workers = min(48, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#gpu-nodes
+    max_workers = min(192, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#gpu-nodes
     ctx = mp.get_context("spawn")
 
     if len(anomaly_files) == 1 or max_workers == 1:
@@ -121,7 +121,7 @@ def compute_select_params_multithreaded(args, anomaly_maps_folder, masks_folder,
 
     return iou_scores_df, dice_scores_df
 
-def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations, no_abs_value=False):
+def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, image_loader, image_paths, mask_loader, timesteps, threshold, median_filter_size, erosion_dilation_iterations, binary_fill_holes, no_abs_value=False):
     """
     input:
         image_loader: DataLoader for the anomaly images
@@ -131,6 +131,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
         median_filter_size: size of the median filter to apply to the anomaly map, use -1 or None to not apply any filtering
         erosion_iterations: number of erosion iterations to apply to the anomaly segmentation, use 0 to not apply any erosion
         dilation_iterations: number of dilation iterations to apply to the anomaly segmentation, use 0 to not apply any dilation
+        binary_fill_holes: whether to apply binary fill holes to the anomaly segmentation, use 0 to not apply it, 1 to apply it
     output:
         final_scores: a dictionary containing the mean and confidence intervals for each metric, with the following format:
         {
@@ -220,6 +221,11 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, imag
                     ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=erosion_dilation_iterations)
                 ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
             
+            if binary_fill_holes == 1:
+                ano_segmentation_np = ano_segmentation.cpu().numpy()
+                for b in range(ano_segmentation_np.shape[0]):
+                    ano_segmentation_np[b,0] = binary_fill_holes(ano_segmentation_np[b,0])
+                ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
 
             iou_scores_batch, dice_scores_batch, hausdorff_distances_batch, precision_scores_batch, recall_scores_batch, f1_scores_batch = scores.compute_scores(ano_segmentation, test_masks)
     if no_abs_value:
