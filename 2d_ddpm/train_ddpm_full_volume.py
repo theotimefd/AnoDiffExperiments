@@ -245,9 +245,9 @@ def launch_train_full_volume(args):
             #progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
 
         if rank==0:
-            print(f"epoch_loss {epoch_loss}")
-            print(f"step {step}")
-            print(f"epoch {epoch}")
+            #print(f"epoch_loss {epoch_loss}")
+            #print(f"step {step}")
+            #print(f"epoch {epoch}")
             writer.add_scalar("train_loss", epoch_loss / (step + 1), epoch)
 
         if (epoch + 1) % val_interval == 0:

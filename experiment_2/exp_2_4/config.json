@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_4",
     "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["compute_metrics_reconstruction"],
+    "pipeline": ["train_ddpm","compute_metrics_reconstruction", "compute_metrics_anomaly_detection"],
     "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -107,9 +107,9 @@
     "diffusion_train": {
         "max_epochs": 600,
         "val_interval": 10,
-        "resume_checkpoint": false,
-        "last_checkpoint_epoch":2699,
-        "last_best_val_loss":0.4525,
+        "resume_checkpoint": true,
+        "last_checkpoint_epoch":280,
+        "last_best_val_loss":0.00545,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5
@@ -117,5 +117,11 @@
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
         "ema":false
+    },
+    "anomaly_detection_param_search":{
+        "median_filter_sizes": [-1, 5, 7, 10],
+        "thresholds": [0.02, 0.04, 0.06, 0.08],
+        "erosion_dilation_iterations": [0, 1, 2, 4, 6],
+        "binary_fill_holes": [0, 1]
     }
 }

@@ -36,8 +36,8 @@ import utils.simplex_ddpm as simplex_ddpm
 
 
 def setup_ddp(rank, world_size):
-    tprint(f"Running DDP diffusion training on rank {rank}/world_size {world_size}.")
-    tprint(f"Initing to IP {os.environ['MASTER_ADDR']}")
+    dtprint(f"Running DDP diffusion training on rank {rank}/world_size {world_size}.")
+    dtprint(f"Initing to IP {os.environ['MASTER_ADDR']}")
     dist.init_process_group(
         backend="nccl", init_method="env://", timeout=timedelta(seconds=36000), rank=rank, world_size=world_size
     )  # gloo, nccl
@@ -529,9 +529,6 @@ def launch_train_patch(args):
 
             #progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
 
-        if rank==0:
-            tprint(f"epoch_loss {epoch_loss}, epoch {epoch}")
-            writer.add_scalar("train_loss", epoch_loss / (step + 1), epoch)
 
         if (epoch + 1) % val_interval == 0:
             model.eval()
@@ -572,8 +569,8 @@ def launch_train_patch(args):
                     else:
                         torch.save(model.state_dict(), os.path.join(MODELS_DIR, f"{SUB_EXPERIMENT_NAME}_best_model.pth"))
 
-                    tprint("saved new best metric model")
-                    tprint(
+                    dtprint("saved new best metric model")
+                    dtprint(
                         f"current epoch: {epoch + 1} current val loss: {avg_val_loss:.4f}"
                         f"\nbest val loss: {best_val_loss:.4f}"
                         f" at epoch: {best_val_epoch}"
@@ -582,6 +579,6 @@ def launch_train_patch(args):
 
 
         
-    tprint(f"Training complete, best val loss: {best_val_loss:.6f} at epoch {best_val_epoch}")
+    dtprint(f"Training complete, best val loss: {best_val_loss:.6f} at epoch {best_val_epoch}")
     
     

@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_2",
     "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
-    "pipeline": ["train_ddpm_full_volume", "compute_metrics_reconstruction","compute_metrics_anomaly_detection"],
+    "pipeline": ["compute_select_params_cpu"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -103,7 +103,7 @@
     "diffusion_train": {
         "max_epochs": 6000,
         "val_interval": 10,
-        "resume_checkpoint": true,
+        "resume_checkpoint": false,
         "last_checkpoint_epoch":4800,
         "last_best_val_loss":0.4019,
         "optimizer": {
@@ -117,7 +117,7 @@
     "anomaly_detection_param_search":{
         "median_filter_sizes": [-1, 5, 7, 10],
         "thresholds": [0.02, 0.04, 0.06, 0.08],
-        "erosion_dilation_iterations": [0, 1, 2, 4, 6, 8],
+        "erosion_dilation_iterations": [0, 1, 2, 4, 6],
         "binary_fill_holes": [0, 1]
     }
 }
