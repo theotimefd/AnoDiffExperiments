@@ -426,11 +426,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_large_group, dice_scores_df_large_group = launch_compute_select_params_cpu(args)
+            launch_compute_select_params_cpu(args)
         
-            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+"iou_scores_param_search_brats.csv")
-            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+"dice_scores_param_search_brats.csv")
-
         # Read best parameters from CSV file
         best_params_df = pd.read_csv(best_params_csv_path)
         best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
@@ -498,10 +495,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_large_group, dice_scores_df_large_group = launch_compute_select_params_cpu(args)
-        
-            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_large_group.csv")
-            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_large_group.csv")
+            launch_compute_select_params_cpu(args)
 
         # Read best parameters from CSV file
         best_params_df = pd.read_csv(best_params_csv_path)
@@ -570,11 +564,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_medium_group, dice_scores_df_medium_group = launch_compute_select_params_cpu(args)
+            launch_compute_select_params_cpu(args)
         
-            iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_medium_group.csv")
-            dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_medium_group.csv")
-
         # Read best parameters from CSV file
         best_params_df = pd.read_csv(best_params_csv_path)
         best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
@@ -620,11 +611,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_small_group, dice_scores_df_small_group = launch_compute_select_params_cpu(args)
+            launch_compute_select_params_cpu(args)
         
-            iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_small_group.csv")
-            dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_small_group.csv")
-
         # Read best parameters from CSV file
         best_params_df = pd.read_csv(best_params_csv_path)
         best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
@@ -670,15 +658,12 @@ def launch_compute_metrics_anomaly_detection(args):
         for timesteps in num_timesteps_to_try:
             make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params_small, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
-        best_params_csv_path = SUB_EXPERIMENT_DIR+"best_params_soop_fast_large_group.csv"
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}.csv"
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_large_group, dice_scores_df_large_group = launch_compute_select_params_cpu(args)
-        
-            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+"iou_scores_param_search_soop_fast_large_group.csv")
-            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+"dice_scores_param_search_soop_fast_large_group.csv")
-
+            launch_compute_select_params_cpu(args)
+ 
         # Read best parameters from CSV file
         best_params_df = pd.read_csv(best_params_csv_path)
         best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))

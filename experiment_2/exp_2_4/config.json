@@ -108,8 +108,8 @@
         "max_epochs": 600,
         "val_interval": 10,
         "resume_checkpoint": true,
-        "last_checkpoint_epoch":280,
-        "last_best_val_loss":0.00545,
+        "last_checkpoint_epoch":439,
+        "last_best_val_loss":0.003712,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5

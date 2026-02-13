@@ -56,7 +56,7 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
             for idx_in_batch in range(test_images.shape[0]):
                 image_id = i*test_images.shape[0] + idx_in_batch
                 image_name = os.path.basename(image_paths[image_id])
-                output_path = output_folder+f"ano_map_{image_name}_ts_{timesteps}.nii.gz"
+                output_path = output_folder+f"{image_name.split('.')[0]}_t_{timesteps}.nii.gz"
                 #if the output file doesn't exist already
                 if not os.path.exists(output_path): # if just one file is missing, we need to process the batch
                     process_batch()

@@ -94,9 +94,9 @@ def make_confidence_intervals(scores_list, bootstrap_rounds=200):
             - ci_lower (float): The lower bound of the 95% confidence interval (2.5th percentile).
             - ci_upper (float): The upper bound of the 95% confidence interval (97.5th percentile).
     Example:
-        >>> scores = np.array([0.8, 0.85, 0.9, 0.82, 0.88])
-        >>> mean, lower, upper = make_confidence_intervals(scores)
-        >>> print(f"Mean: {mean:.3f}, CI: [{lower:.3f}, {upper:.3f}]")
+        scores = np.array([0.8, 0.85, 0.9, 0.82, 0.88])
+        mean, lower, upper = make_confidence_intervals(scores)
+        print(f"Mean: {mean:.3f}, CI: [{lower:.3f}, {upper:.3f}]")
     """
 
     rng = np.random.default_rng(42)
@@ -114,8 +114,8 @@ def make_confidence_intervals(scores_list, bootstrap_rounds=200):
         scores_boot.append(score_boot)
 
     # Compute the mean and 95% confidence intervals
-    mean = np.mean(scores_boot)
-    ci_lower = np.percentile(scores_boot, 2.5)
-    ci_upper = np.percentile(scores_boot, 97.5)
+    mean = np.round(np.mean(scores_boot),4)
+    ci_lower = np.round(np.percentile(scores_boot, 2.5), 4)
+    ci_upper = np.round(np.percentile(scores_boot, 97.5),4)
 
     return mean, ci_lower, ci_upper

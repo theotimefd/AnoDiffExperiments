@@ -279,7 +279,7 @@ def launch_compute_metrics_reconstruction_diffusion(args):
 
     tprint(psnr)
 
-    for idx in range(min(3, test_reconstruction_images.shape[0])):
+    for idx in range(min(4, test_reconstruction_images.shape[0])):
 
         # Original test_reconstruction images
         original_image = test_reconstruction_images[idx, 0].cpu().numpy()

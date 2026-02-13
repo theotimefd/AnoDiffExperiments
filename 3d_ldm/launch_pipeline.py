@@ -9,7 +9,7 @@ from compute_metrics_reconstruction_ae import launch_compute_metrics_reconstruct
 from compute_metrics_anomaly_detection_ae import launch_compute_metrics_anomaly_detection_ae
 from compute_metrics_reconstruction_diffusion import launch_compute_metrics_reconstruction_diffusion
 from compute_metrics_anomaly_detection_diffusion import launch_compute_metrics_anomaly_detection_diffusion
-
+from utils.utils import dtprint
 
 def main():
     print("start of main")
@@ -42,41 +42,36 @@ def main():
 
     if rank == 0:
         
-        print("making directories")
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/{config_dict['experiment_name']}/{config_dict['sub_experiment_name']}/models/", exist_ok=True)
         os.makedirs(f"{args.root_dir}/AnoDiffExperiments/tensorboard/{config_dict['sub_experiment_name']}/", exist_ok=True)
 
 
     for step in args.pipeline:
-        print(step)
+        dtprint(step)
         
         if step == "train_autoencoder":
-            print(f"Launching autoencoder training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            dtprint(f"Launching autoencoder training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train_autoencoder(args)
         
         if step == "train_diffusion":
-            print(f"Launching diffusion training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
+            dtprint(f"Launching diffusion training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train_diffusion(args)
 
         if step == "compute_metrics_reconstruction_ae" and rank == 0:
-            print("Launching reconstruction metrics computation")
+            dtprint("Launching reconstruction metrics computation")
             launch_compute_metrics_reconstruction_ae(args)
 
         if step == "compute_metrics_anomaly_detection_ae" and rank == 0:
-            print("Launching anomaly detection metrics computation for autoencoder")
+            dtprint("Launching anomaly detection metrics computation for autoencoder")
             launch_compute_metrics_anomaly_detection_ae(args)
 
         if step == "compute_metrics_reconstruction_diffusion" and rank == 0:
-            print("Launching reconstruction metrics computation for diffusion model")
+            dtprint("Launching reconstruction metrics computation for diffusion model")
             launch_compute_metrics_reconstruction_diffusion(args)
         
         if step == "compute_metrics_anomaly_detection_diffusion" and rank == 0:
-            print("Launching anomaly detection metrics computation for diffusion model")
+            dtprint("Launching anomaly detection metrics computation for diffusion model")
             launch_compute_metrics_anomaly_detection_diffusion(args)
-            
-        
-            
-    
 
 
 if __name__ == "__main__":

@@ -216,215 +216,143 @@ def launch_compute_select_params_cpu(args):
         metrics_result_text += f"Best Threshold: {best_threshold:.4f}\n"
         metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations}\n"
         metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}\n"
-        tprint(metrics_result_text)
+        dtprint(metrics_result_text)
 
 
-    if args.dataset["test"] == "isles": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
-        print("WARNING ISLES test is still not completely implemented")
-        
-
-        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/TODO/TODO/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-        
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_large_group.csv")
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_large_group.csv")
-
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_large_group.idxmax()['IOU']
-        best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group = best_params
-
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_large_group, best_median_filter_size_large_group, best_threshold_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_isles_large_group.csv", index=False)
-        
-        metrics_result_text = "Large group\n"
-
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
-        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_large_group}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
-
-        # --------------------------------- medium group
-        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
-
-        iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-        
-        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_medium_group.csv")
-        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_medium_group.csv")
-
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_medium_group.idxmax()['IOU']
-        best_num_timesteps_medium_group, best_threshold_medium_group, best_median_filter_size_medium_group, best_erosion_dilation_iterations_medium_group, best_binary_fill_holes_medium_group = best_params
-
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_medium_group, best_median_filter_size_medium_group, best_threshold_medium_group, best_erosion_dilation_iterations_medium_group, best_binary_fill_holes_medium_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_isles_medium_group.csv", index=False)
-
-        metrics_result_text = "Medium group\n"
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_medium_group} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_medium_group} "
-        metrics_result_text += f"Best Threshold: {best_threshold_medium_group:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_medium_group} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_medium_group}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
-
-        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
-        # --------------------------------- small group
-
-        iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_flair_dataset_small/brats_masks_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-        
-        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_isles_small_group.csv")
-        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_isles_small_group.csv")
-
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_small_group.idxmax()['IOU']
-        best_num_timesteps_small_group, best_threshold_small_group, best_median_filter_size_small_group, best_erosion_dilation_iterations_small_group, best_binary_fill_holes_small_group = best_params
-
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_small_group, best_median_filter_size_small_group, best_threshold_small_group, best_erosion_dilation_iterations_small_group, best_binary_fill_holes_small_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_isles_small_group.csv", index=False)
-        
-        metrics_result_text = "Small group\n"
-
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_small_group} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_small_group} "
-        metrics_result_text += f"Best Threshold: {best_threshold_small_group:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_small_group} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_small_group}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
-    
-            
-
-    if args.dataset["test"] == "soop":
+    if args.dataset["test"] == "isles" or args.dataset["test"] == "soop":
         
         # --------------------------------- large group
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
 
-        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_large_group.csv"
+
+        if not os.path.exists(best_params_csv_path):
+            dtprint("Large group")
+            dtprint(f"Computing best parameters with CPU...")
+            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
         
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_large_group.csv")
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_large_group.csv")
+            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_large_group.csv")
+            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_large_group.csv")
 
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_large_group.idxmax()['IOU']
-        best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group = best_params
-        
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_large_group, best_median_filter_size_large_group, best_threshold_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_soop_large_group.csv", index=False)
+            # Find the best parameters based on IOU score
+            best_params = iou_scores_df_large_group.idxmax()['IOU']
+            best_num_timesteps_large_group, best_threshold_large_group, best_median_filter_size_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group = best_params
+            
+            # Save best parameters to CSV
+            best_params_df = pd.DataFrame({
+                'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
+                'value': [best_num_timesteps_large_group, best_median_filter_size_large_group, best_threshold_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group]
+            })
+            best_params_df.to_csv(best_params_csv_path, index=False)
 
-        metrics_result_text = "Large group\n"
+            metrics_result_text = "Large group\n"
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
-        metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_large_group}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_large_group} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_large_group} "
+            metrics_result_text += f"Best Threshold: {best_threshold_large_group:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_large_group} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_large_group}"
+            metrics_result_text += "\n"
+            dtprint(metrics_result_text)
 
         # --------------------------------- medium group
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_medium_group.csv"
 
-        iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-        
-        iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_medium_group.csv")
-        dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_medium_group.csv")
+        if not os.path.exists(best_params_csv_path):
+            dtprint("Medium group")
+            dtprint(f"Computing best parameters with CPU...")
+            iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+            
+            iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_medium_group.csv")
+            dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_medium_group.csv")
 
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_medium_group.idxmax()['IOU']
-        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations, best_binary_fill_holes = best_params
+            # Find the best parameters based on IOU score
+            best_params = iou_scores_df_medium_group.idxmax()['IOU']
+            best_num_timesteps_medium_group, best_threshold_medium_group, best_median_filter_size_medium_group, best_erosion_dilation_iterations_medium_group, best_binary_fill_holes_medium_group = best_params
 
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_medium_group, best_median_filter_size_medium_group, best_threshold_medium_group, best_erosion_dilation_iterations_medium_group, best_binary_fill_holes_medium_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_soop_medium_group.csv", index=False)
-        
-        metrics_result_text = "Medium group\n"
+            # Save best parameters to CSV
+            best_params_df = pd.DataFrame({
+                'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
+                'value': [best_num_timesteps_medium_group, best_median_filter_size_medium_group, best_threshold_medium_group, best_erosion_dilation_iterations_medium_group, best_binary_fill_holes_medium_group]
+            })
+            best_params_df.to_csv(best_params_csv_path, index=False)
+            
+            metrics_result_text = "Medium group\n"
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_medium_group} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_medium_group} "
+            metrics_result_text += f"Best Threshold: {best_threshold_medium_group:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_medium_group} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_medium_group}"
+            metrics_result_text += "\n"
+            tprint(metrics_result_text)
 
         # --------------------------------- small group
         os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_small_group.csv"
 
-        iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-        
+        if not os.path.exists(best_params_csv_path):
+            dtprint("Small group")
+            dtprint(f"Computing best parameters with CPU...")
+            iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+            
 
-        iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_small_group.csv")
-        dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_small_group.csv")
+            iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_small_group.csv")
+            dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_small_group.csv")
 
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_small_group.idxmax()['IOU']
-        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations, best_binary_fill_holes = best_params
+            # Find the best parameters based on IOU score
+            best_params = iou_scores_df_small_group.idxmax()['IOU']
+            best_num_timesteps_small_group, best_threshold_small_group, best_median_filter_size_small_group, best_erosion_dilation_iterations_small_group, best_binary_fill_holes_small_group = best_params
 
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_small_group, best_median_filter_size_small_group, best_threshold_small_group, best_erosion_dilation_iterations_small_group, best_binary_fill_holes_small_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_soop_small_group.csv", index=False)
+            # Save best parameters to CSV
+            best_params_df = pd.DataFrame({
+                'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
+                'value': [best_num_timesteps_small_group, best_median_filter_size_small_group, best_threshold_small_group, best_erosion_dilation_iterations_small_group, best_binary_fill_holes_small_group]
+            })
+            best_params_df.to_csv(best_params_csv_path, index=False)
 
-        metrics_result_text = "Small group\n"
+            metrics_result_text = "Small group\n"
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+            metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
+            metrics_result_text += "\n"
+            tprint(metrics_result_text)
     
     if args.dataset["test"] == "soop_fast":
         
         # --------------------------------- large group
-
-        iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+"datasets/final_soop_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
         
-        iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_soop_fast.csv")
-        dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_soop_fast.csv")
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}.csv"
 
-        # Find the best parameters based on IOU score
-        best_params = iou_scores_df_large_group.idxmax()['IOU']
-        best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations, best_binary_fill_holes = best_params
+        if not os.path.exists(best_params_csv_path):
+            dtprint(f"Computing best parameters with CPU...")
+            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+            
+            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}.csv")
+            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}.csv")
 
-        # Save best parameters to CSV
-        best_params_df = pd.DataFrame({
-            'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
-            'value': [best_num_timesteps_large_group, best_median_filter_size_large_group, best_threshold_large_group, best_erosion_dilation_iterations_large_group, best_binary_fill_holes_large_group]
-        })
-        best_params_df.to_csv(SUB_EXPERIMENT_DIR+"best_params_soop_fast_large_group.csv", index=False)
+            # Find the best parameters based on IOU score
+            best_params = iou_scores_df_large_group.idxmax()['IOU']
+            best_num_timesteps, best_threshold, best_median_filter_size, best_erosion_dilation_iterations, best_binary_fill_holes = best_params
 
-        metrics_result_text = "Large group (SOOP Fast)\n"
+            # Save best parameters to CSV
+            best_params_df = pd.DataFrame({
+                'parameter': ['num_timesteps', 'median_filter_size', 'threshold', 'erosion_dilation_iterations', 'binary_fill_holes'],
+                'value': [best_num_timesteps, best_median_filter_size, best_threshold, best_erosion_dilation_iterations, best_binary_fill_holes]
+            })
+            best_params_df.to_csv(best_params_csv_path, index=False)
 
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
+            metrics_result_text = "Large group (SOOP Fast)\n"
+
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+            metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
+            metrics_result_text += "\n"
+            tprint(metrics_result_text)
 

@@ -4,7 +4,7 @@ This file only works for 3D slice by slice inference.
 
 import os
 import sys
-from turtle import pd
+import pandas as pd
 
 from utils.compute_select_params_cpu import launch_compute_select_params_cpu
 
@@ -432,16 +432,16 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
 
     # -------------------- define the data --------------------
     if args.dataset["test"] == "brats":
-        ano_dataset = anomaly_datasets.BRATS(args)
+        ano_dataset = anomaly_datasets.BRATS(args, batch_size=args.autoencoder_train["batch_size"])
 
     if args.dataset["test"] == "isles":
-        ano_dataset = anomaly_datasets.ISLES(args)
+        ano_dataset = anomaly_datasets.ISLES(args, batch_size=args.autoencoder_train["batch_size"])
     
     if args.dataset["test"] == "soop":
-        ano_dataset = anomaly_datasets.SOOP(args)
+        ano_dataset = anomaly_datasets.SOOP(args, batch_size=args.autoencoder_train["batch_size"])
     
     if args.dataset["test"] == "soop_fast":
-        ano_dataset = anomaly_datasets.SOOP_Fast(args)
+        ano_dataset = anomaly_datasets.SOOP_Fast(args, batch_size=args.autoencoder_train["batch_size"])
 
 
     if args.noise["type"] == "simplex":
