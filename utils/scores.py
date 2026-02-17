@@ -51,7 +51,8 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
     dice_scores.append(dice_score)
 
     if only_dice_iou:
-        return iou_scores, dice_scores, [], [], [], []
+        return list(np.concatenate(iou_scores)), list(np.concatenate(dice_scores)), [], [], [], []
+
 
     # Hausdorff Distance
     hausdorff_distance = compute_hausdorff_distance(y_pred, y_true)
@@ -60,23 +61,26 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
     hausdorff_distances.append(flattened_hausdorff_distance)
 
     # Precision, Recall, F1
-    y_pred_np = y_pred.cpu().numpy().flatten()
-    y_true_np = y_true.cpu().numpy().flatten()
+    batch_size = y_pred.shape[0]
     
-    true_positives = np.sum((y_pred_np == 1) & (y_true_np == 1))
-    false_positives = np.sum((y_pred_np == 1) & (y_true_np == 0))
-    false_negatives = np.sum((y_pred_np == 0) & (y_true_np == 1))
-    
-    precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
-    recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-    
-    precision_scores.append(precision)
-    recall_scores.append(recall)
-    f1_scores.append(f1)
+    for b in range(batch_size):
+        y_pred_np = y_pred[b].cpu().numpy().flatten()
+        y_true_np = y_true[b].cpu().numpy().flatten()
+        
+        true_positives = np.sum((y_pred_np == 1) & (y_true_np == 1))
+        false_positives = np.sum((y_pred_np == 1) & (y_true_np == 0))
+        false_negatives = np.sum((y_pred_np == 0) & (y_true_np == 1))
+        
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
+        precision_scores.append(precision)
+        recall_scores.append(recall)
+        f1_scores.append(f1)
 
-    return iou_scores, dice_scores, hausdorff_distances, precision_scores, recall_scores, f1_scores
-
+    return list(np.concatenate(iou_scores)), list(np.concatenate(dice_scores)), list(np.concatenate(hausdorff_distances)), list(np.concatenate(precision_scores)), list(np.concatenate(recall_scores)), list(np.concatenate(f1_scores))
+    
 
 def make_confidence_intervals(scores_list, bootstrap_rounds=200):
     """

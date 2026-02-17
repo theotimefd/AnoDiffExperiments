@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_11",
     "description": "3D LDM on flair",
-    "pipeline": ["compute_select_params_cpu"],
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "resume_ckpt": false,
     "spatial_dims": 3,
     "latent_channels": 16,

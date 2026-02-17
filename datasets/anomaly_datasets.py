@@ -166,7 +166,66 @@ class SOOP():
 
     def first(self):
         return first(self.test_anomaly_large_loader_select_params)
+    
+    def get_anomaly_loader_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_select_params
+        elif group == "small":
+            return self.test_anomaly_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_loader_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_metrics
+        elif group == "small":
+            return self.test_anomaly_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_select_params(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_select_params
+        elif group == "medium":
+            return self.test_masks_medium_loader_select_params
+        elif group == "small":
+            return self.test_masks_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_metrics(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_metrics
+        elif group == "medium":
+            return self.test_masks_medium_loader_metrics
+        elif group == "small":
+            return self.test_masks_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
 
+    def get_anomaly_images_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_images_select_params
+        elif group == "small":
+            return self.test_anomaly_small_images_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_images_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_images_metrics
+        elif group == "small":
+            return self.test_anomaly_small_images_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
 
 class SOOP_Fast():
     def __init__(self, 
@@ -392,6 +451,67 @@ class ISLES():
     
     def first(self):
         return first(self.test_anomaly_large_loader_select_params)
+    
+        
+    def get_anomaly_loader_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_select_params
+        elif group == "small":
+            return self.test_anomaly_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_loader_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_metrics
+        elif group == "small":
+            return self.test_anomaly_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_select_params(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_select_params
+        elif group == "medium":
+            return self.test_masks_medium_loader_select_params
+        elif group == "small":
+            return self.test_masks_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_metrics(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_metrics
+        elif group == "medium":
+            return self.test_masks_medium_loader_metrics
+        elif group == "small":
+            return self.test_masks_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_anomaly_images_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_images_select_params
+        elif group == "small":
+            return self.test_anomaly_small_images_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_images_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_images_metrics
+        elif group == "small":
+            return self.test_anomaly_small_images_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
 
 
 

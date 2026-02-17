@@ -157,30 +157,32 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
                 ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
 
             iou_scores_batch, dice_scores_batch, hausdorff_distances_batch, precision_scores_batch, recall_scores_batch, f1_scores_batch = scores.compute_scores(ano_segmentation, test_masks)
+    
+            # put all the batch score lists into one big list
+            iou_scores.append(iou_scores_batch)
+            dice_scores.append(dice_scores_batch)
+            hausdorff_distances.append(hausdorff_distances_batch)
+            precision_scores.append(precision_scores_batch)
+            recall_scores.append(recall_scores_batch)
+            f1_scores.append(f1_scores_batch)
+    
     if no_abs_value:
         return {}
     if no_masks:
         return {}
 
-    # put all the batch score lists into one big list
-    iou_scores.append(iou_scores_batch)
-    dice_scores.append(dice_scores_batch)
-    hausdorff_distances.append(hausdorff_distances_batch)
-    precision_scores.append(precision_scores_batch)
-    recall_scores.append(recall_scores_batch)
-    f1_scores.append(f1_scores_batch)
-
-    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.concatenate(iou_scores))
     
-    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.concatenate(dice_scores))
-
-    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.concatenate(hausdorff_distances))
-
-    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.concatenate(precision_scores))
-
-    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.concatenate(recall_scores))
+    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(iou_scores).flatten())
     
-    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.concatenate(f1_scores))
+    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(dice_scores).flatten())
+
+    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(hausdorff_distances).flatten())
+
+    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(precision_scores).flatten())
+
+    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(recall_scores).flatten())
+    
+    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(f1_scores).flatten())
 
     final_scores = {
         "iou": [np.round(mean_iou, 4), np.round(lower_iou, 4), np.round(upper_iou, 4)],
@@ -326,9 +328,9 @@ def show_summary_figure(args, device, model, infer_scheduler,
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
 
     if args.spatial_dims_val_test == 2:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
+        plt.savefig(f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
     if args.spatial_dims_val_test == 3:
-        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
+        plt.savefig(f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
 
 
 def launch_compute_metrics_anomaly_detection(args):
@@ -345,7 +347,7 @@ def launch_compute_metrics_anomaly_detection(args):
 
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
-    SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
+    SUB_EXPERIMENT_DIR = f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
     ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
     ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
@@ -353,7 +355,7 @@ def launch_compute_metrics_anomaly_detection(args):
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
 
-    model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
+    model_path = f"{args.root_dir}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
@@ -417,296 +419,77 @@ def launch_compute_metrics_anomaly_detection(args):
     if args.dataset["test"] == "brats":
         # Compute the raw anomaly maps and save them as nifti files
         # So they can be used to compute metrics later with different postprocessing steps without having to recompute the anomaly maps each time.
-
-        dtprint("Generating raw anomaly maps for different timesteps...")
-        for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_loader_select_params, ano_dataset.test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
-
+        
+        # Check if select best params has already been done
         best_params_csv_path = SUB_EXPERIMENT_DIR+"best_params_brats.csv"
 
         if not os.path.exists(best_params_csv_path):
+            dtprint("Generating raw anomaly maps for different timesteps...")
+            for timesteps in num_timesteps_to_try:
+                make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_loader_select_params, ano_dataset.test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+
             dtprint(f"Computing best parameters with CPU...")
             launch_compute_select_params_cpu(args)
-        
-        # Read best parameters from CSV file
-        best_params_df = pd.read_csv(best_params_csv_path)
-        best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
+        else:
+            dtprint(f"Best parameters already computed: {best_params_csv_path}")        
 
-        best_num_timesteps = int(best_params_dict['num_timesteps'])
-        best_median_filter_size = int(best_params_dict['median_filter_size'])
-        best_threshold = float(best_params_dict['threshold'])
-        best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
-        best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
-        
-        dtprint(f"Computing final metrics with best parameters...")
-        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, 
-                                       ano_dataset.test_anomaly_loader_metrics, 
-                                       ano_dataset.test_anomaly_images_metrics, 
-                                       ano_dataset.test_masks_loader_metrics, 
-                                       timesteps=best_num_timesteps, 
-                                       threshold=best_threshold, 
-                                       median_filter_size=best_median_filter_size, 
-                                       erosion_dilation_iterations=best_erosion_dilation_iterations,
-                                       binary_fill_holes_param=best_binary_fill_holes)
+        # Check if the final mterics have already been computed
+        metrics_csv_path = SUB_EXPERIMENT_DIR + f"metrics_{args.dataset['test']}.csv"
 
-        
-        metrics_result_text = "BRATS\n"
-        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
-        
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        dtprint(metrics_result_text)
+        if not os.path.exists(metrics_csv_path):
 
-        
-        if args.show_summary_figures:
-            dtprint("Making summary figure...")
-            show_summary_figure(args, 
-                            device, 
-                            model, 
-                            infer_scheduler, 
-                            ano_dataset.test_anomaly_large_loader_metrics, 
-                            ano_dataset.test_masks_large_loader_metrics, 
-                            timesteps=best_num_timesteps, 
-                            median_filter_size=best_median_filter_size, 
-                            threshold=best_threshold, 
-                            erosion_dilation_iterations=best_erosion_dilation_iterations,
-                            binary_fill_holes_param=best_binary_fill_holes,
-                            metrics_result_text=metrics_result_text,
-                            ROOT_DIR=ROOT_DIR,
-                            EXPERIMENT_NAME=EXPERIMENT_NAME,
-                            SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
-                            )
+            # Read best parameters from CSV file
+            best_params_df = pd.read_csv(best_params_csv_path)
+            best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
 
-    if args.dataset["test"] == "isles" or args.dataset["test"] == "soop": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
-        
-        
-        # --------------------------------- large group
-        dtprint("Large group")
-        dtprint("Generating raw anomaly maps for different timesteps...")
-        os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
-        for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/")
+            best_num_timesteps = int(best_params_dict['num_timesteps'])
+            best_median_filter_size = int(best_params_dict['median_filter_size'])
+            best_threshold = float(best_params_dict['threshold'])
+            best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
+            best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
             
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_large_group.csv"
+            dtprint(f"Computing final metrics with best parameters...")
+            final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, 
+                                        ano_dataset.test_anomaly_loader_metrics, 
+                                        ano_dataset.test_anomaly_images_metrics, 
+                                        ano_dataset.test_masks_loader_metrics, 
+                                        timesteps=best_num_timesteps, 
+                                        threshold=best_threshold, 
+                                        median_filter_size=best_median_filter_size, 
+                                        erosion_dilation_iterations=best_erosion_dilation_iterations,
+                                        binary_fill_holes_param=best_binary_fill_holes)
 
-        if not os.path.exists(best_params_csv_path):
-            dtprint(f"Computing best parameters with CPU...")
-            launch_compute_select_params_cpu(args)
-
-        # Read best parameters from CSV file
-        best_params_df = pd.read_csv(best_params_csv_path)
-        best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
-
-        best_num_timesteps = int(best_params_dict['num_timesteps'])
-        best_median_filter_size = int(best_params_dict['median_filter_size'])
-        best_threshold = float(best_params_dict['threshold'])
-        best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
-        best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
-
-        dtprint(f"Computing final metrics with best parameters...")
-        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"large/", infer_scheduler, 
-                                       ano_dataset.test_anomaly_large_loader_metrics, 
-                                       ano_dataset.test_anomaly_large_images_metrics, 
-                                       ano_dataset.test_masks_large_loader_metrics, 
-                                       timesteps=best_num_timesteps, 
-                                       threshold=best_threshold, 
-                                       median_filter_size=best_median_filter_size, 
-                                       erosion_dilation_iterations=best_erosion_dilation_iterations,
-                                       binary_fill_holes_param=best_binary_fill_holes)
-        
-        metrics_result_text = f"{args.dataset["test"]} Large group\n"
-        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
-
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        dtprint(metrics_result_text)
-        
-        
-        if args.show_summary_figures:
-            dtprint("Making summary figure...")
-            show_summary_figure(args, 
-                            device, 
-                            model, 
-                            infer_scheduler, 
-                            ano_dataset.test_anomaly_large_loader_metrics, 
-                            ano_dataset.test_masks_large_loader_metrics, 
-                            timesteps=best_num_timesteps, 
-                            median_filter_size=best_median_filter_size, 
-                            threshold=best_threshold, 
-                            erosion_dilation_iterations=best_erosion_dilation_iterations,
-                            binary_fill_holes_param=best_binary_fill_holes,
-                            metrics_result_text=metrics_result_text,
-                            ROOT_DIR=ROOT_DIR,
-                            EXPERIMENT_NAME=EXPERIMENT_NAME,
-                            SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
-                            )
-        
-        
-        # --------------------------------- medium group
-        dtprint("Medium group")
-        dtprint("Generating raw anomaly maps for different timesteps...")
-
-        os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
-        
-        for timesteps in num_timesteps_to_try:
             
-            make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_medium_loader_select_params, ano_dataset.test_anomaly_medium_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/")
+            metrics_result_text = "BRATS\n"
+            metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
+            
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+            metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
+            metrics_result_text += "\n"
+            dtprint(metrics_result_text)
 
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_medium_group.csv"
+            # Save metrics results to CSV file
+            
+            metrics_df = pd.DataFrame({
+                'metric': list(final_scores.keys()),
+                'mean': [final_scores[key][0] for key in final_scores],
+                'lower_ci': [final_scores[key][1] for key in final_scores],
+                'upper_ci': [final_scores[key][2] for key in final_scores]
+            })
+            metrics_df.to_csv(metrics_csv_path, index=False)
+            
 
-        if not os.path.exists(best_params_csv_path):
-            dtprint(f"Computing best parameters with CPU...")
-            launch_compute_select_params_cpu(args)
-        
-        # Read best parameters from CSV file
-        best_params_df = pd.read_csv(best_params_csv_path)
-        best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
-
-        best_num_timesteps = int(best_params_dict['num_timesteps'])
-        best_median_filter_size = int(best_params_dict['median_filter_size'])
-        best_threshold = float(best_params_dict['threshold'])
-        best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
-        best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
-
-        dtprint(f"Computing final metrics with best parameters...")
-        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"medium/", infer_scheduler, 
-                                       ano_dataset.test_anomaly_medium_loader_metrics, 
-                                       ano_dataset.test_anomaly_medium_images_metrics, 
-                                       ano_dataset.test_masks_medium_loader_metrics, 
-                                       timesteps=best_num_timesteps, 
-                                       threshold=best_threshold, 
-                                       median_filter_size=best_median_filter_size, 
-                                       erosion_dilation_iterations=best_erosion_dilation_iterations,
-                                       binary_fill_holes_param=best_binary_fill_holes)
-        
-        metrics_result_text = "Medium group\n"
-        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
-
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        tprint(metrics_result_text)
-
-        
-        # --------------------------------- small group
-        dtprint("Small group")
-        dtprint("Generating raw anomaly maps for different timesteps...")
-        os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
-
-        for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_small_loader_select_params, ano_dataset.test_anomaly_small_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/")
-
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_small_group.csv"
-
-        if not os.path.exists(best_params_csv_path):
-            dtprint(f"Computing best parameters with CPU...")
-            launch_compute_select_params_cpu(args)
-        
-        # Read best parameters from CSV file
-        best_params_df = pd.read_csv(best_params_csv_path)
-        best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
-
-        best_num_timesteps = int(best_params_dict['num_timesteps'])
-        best_median_filter_size = int(best_params_dict['median_filter_size'])
-        best_threshold = float(best_params_dict['threshold'])
-        best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
-        best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
-
-        dtprint(f"Computing final metrics with best parameters...")
-        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+"small/", infer_scheduler, 
-                                       ano_dataset.test_anomaly_small_loader_metrics, 
-                                       ano_dataset.test_anomaly_small_images_metrics, 
-                                       ano_dataset.test_masks_small_loader_metrics, 
-                                       timesteps=best_num_timesteps, 
-                                       threshold=best_threshold, 
-                                       median_filter_size=best_median_filter_size, 
-                                       erosion_dilation_iterations=best_erosion_dilation_iterations,
-                                       binary_fill_holes_param=best_binary_fill_holes)
-
-        
-        metrics_result_text = "Small group\n"
-        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
-
-        
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
-        metrics_result_text += "\n"
-        dtprint(metrics_result_text)
-    
-        
-    
-    if args.dataset["test"] == "soop_fast":
-        
-        # --------------------------------- large group
-        dtprint("Large group")
-        dtprint("Generating raw anomaly maps for different timesteps...")
-
-        for timesteps in num_timesteps_to_try:
-            make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params_small, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
-
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}.csv"
-
-        if not os.path.exists(best_params_csv_path):
-            dtprint(f"Computing best parameters with CPU...")
-            launch_compute_select_params_cpu(args)
- 
-        # Read best parameters from CSV file
-        best_params_df = pd.read_csv(best_params_csv_path)
-        best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
-
-        best_num_timesteps = int(best_params_dict['num_timesteps'])
-        best_median_filter_size = int(best_params_dict['median_filter_size'])
-        best_threshold = float(best_params_dict['threshold'])
-        best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
-        best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
-
-        dtprint(f"Computing final metrics with best parameters...")
-
-        final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, 
-                                       ano_dataset.test_anomaly_large_loader_metrics_small, 
-                                       ano_dataset.test_anomaly_large_images_metrics, 
-                                       ano_dataset.test_masks_large_loader_metrics_small, 
-                                       timesteps=best_num_timesteps, 
-                                       threshold=best_threshold, 
-                                       median_filter_size=best_median_filter_size, 
-                                       erosion_dilation_iterations=best_erosion_dilation_iterations, 
-                                       binary_fill_holes_param=best_binary_fill_holes)
-
-        
-        metrics_result_text = "SOOP fast\n"
-        metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
-        
-        metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-        metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-        metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-        metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-        metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}\n"
-
-        dtprint(metrics_result_text)
-
-        
-        if args.show_summary_figures:
-            dtprint("Making summary figure...")
-            show_summary_figure(args, 
+            if args.show_summary_figures:
+                dtprint("Making summary figure...")
+                show_summary_figure(args, 
                                 device, 
                                 model, 
                                 infer_scheduler, 
-                                ano_dataset.test_anomaly_large_loader_metrics_small, 
-                                ano_dataset.test_masks_large_loader_metrics_small, 
+                                ano_dataset.test_anomaly_large_loader_metrics, 
+                                ano_dataset.test_masks_large_loader_metrics, 
                                 timesteps=best_num_timesteps, 
                                 median_filter_size=best_median_filter_size, 
                                 threshold=best_threshold, 
@@ -717,4 +500,184 @@ def launch_compute_metrics_anomaly_detection(args):
                                 EXPERIMENT_NAME=EXPERIMENT_NAME,
                                 SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
                                 )
+        else:
+            dtprint(f"Final metrics already computed: {metrics_csv_path}")
+
+    if args.dataset["test"] == "isles" or args.dataset["test"] == "soop": # TODO: finir pour isles et changer les noms de tous les fichiers isles pour qu'ils aient tous le même nom
         
+        groups = ["large", "medium", "small"] # the groups of anomalies based on their size, large is the easiest and small is the hardest
+
+        for group in groups:
+            
+            dtprint(f"{group} group")
+
+            # Check if select best params has already been done
+            best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}_{group}_group.csv"
+
+            if not os.path.exists(best_params_csv_path):
+
+                dtprint("Generating raw anomaly maps for different timesteps...")
+                os.makedirs(ANOMALY_MAPS_DIR+f"{group}/", exist_ok=True)
+                
+                for timesteps in num_timesteps_to_try:
+                    make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.get_anomaly_loader_select_params(group), ano_dataset.get_anomaly_images_select_params(group), timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+group+"/")
+                
+                dtprint(f"Computing best parameters with CPU...")
+                launch_compute_select_params_cpu(args)
+            else:
+                dtprint(f"Best parameters already computed: {best_params_csv_path}")
+            
+
+            # Check if the final mterics have already been computed
+            metrics_csv_path = SUB_EXPERIMENT_DIR + f"metrics_{group}_group_{args.dataset['test']}.csv"
+
+            if not os.path.exists(metrics_csv_path):
+
+                # Read best parameters from CSV file
+                best_params_df = pd.read_csv(best_params_csv_path)
+                best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
+
+                best_num_timesteps = int(best_params_dict['num_timesteps'])
+                best_median_filter_size = int(best_params_dict['median_filter_size'])
+                best_threshold = float(best_params_dict['threshold'])
+                best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
+                best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
+
+                dtprint(f"Computing final metrics with best parameters...")
+                final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR+f"{group}/", infer_scheduler, 
+                                            ano_dataset.get_anomaly_loader_metrics(group), 
+                                            ano_dataset.get_anomaly_images_metrics(group), 
+                                            ano_dataset.get_masks_loader_metrics(group), 
+                                            timesteps=best_num_timesteps, 
+                                            threshold=best_threshold, 
+                                            median_filter_size=best_median_filter_size, 
+                                            erosion_dilation_iterations=best_erosion_dilation_iterations,
+                                            binary_fill_holes_param=best_binary_fill_holes)
+                
+                metrics_result_text = f"{args.dataset['test']} {group} group\n"
+                metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
+
+                metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+                metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+                metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+                metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
+                metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
+                metrics_result_text += "\n"
+                dtprint(metrics_result_text)
+                
+                # Save metrics results to CSV file
+                metrics_df = pd.DataFrame({
+                    'metric': list(final_scores.keys()),
+                    'mean': [final_scores[key][0] for key in final_scores],
+                    'lower_ci': [final_scores[key][1] for key in final_scores],
+                    'upper_ci': [final_scores[key][2] for key in final_scores]
+                })
+                metrics_df.to_csv(metrics_csv_path, index=False)
+                
+                if args.show_summary_figures and group == "large":
+                    dtprint("Making summary figure...")
+                    show_summary_figure(args, 
+                                    device, 
+                                    model, 
+                                    infer_scheduler, 
+                                    ano_dataset.get_anomaly_loader_metrics(group), 
+                                    ano_dataset.get_masks_loader_metrics(group), 
+                                    timesteps=best_num_timesteps, 
+                                    median_filter_size=best_median_filter_size, 
+                                    threshold=best_threshold, 
+                                    erosion_dilation_iterations=best_erosion_dilation_iterations,
+                                    binary_fill_holes_param=best_binary_fill_holes,
+                                    metrics_result_text=metrics_result_text,
+                                    ROOT_DIR=ROOT_DIR,
+                                    EXPERIMENT_NAME=EXPERIMENT_NAME,
+                                    SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                                    )
+            else:
+                dtprint(f"Final metrics already computed: {metrics_csv_path}")    
+        
+        
+    
+    if args.dataset["test"] == "soop_fast":
+        
+        # --------------------------------- large group
+        dtprint("Large group")
+        dtprint("Generating raw anomaly maps for different timesteps...")
+
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}.csv"
+        
+        if not os.path.exists(best_params_csv_path):
+        
+            for timesteps in num_timesteps_to_try:
+                make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params_small, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+
+
+            dtprint(f"Computing best parameters with CPU...")
+            launch_compute_select_params_cpu(args)
+ 
+
+        metrics_csv_path = SUB_EXPERIMENT_DIR + f"metrics_{args.dataset['test']}.csv"
+        if not os.path.exists(metrics_csv_path):
+
+            # Read best parameters from CSV file
+            best_params_df = pd.read_csv(best_params_csv_path)
+            best_params_dict = dict(zip(best_params_df['parameter'], best_params_df['value']))
+
+            best_num_timesteps = int(best_params_dict['num_timesteps'])
+            best_median_filter_size = int(best_params_dict['median_filter_size'])
+            best_threshold = float(best_params_dict['threshold'])
+            best_erosion_dilation_iterations = int(best_params_dict['erosion_dilation_iterations'])
+            best_binary_fill_holes = int(best_params_dict['binary_fill_holes'])
+
+            dtprint(f"Computing final metrics with best parameters...")
+
+            final_scores = compute_metrics(args, model, device, ANOMALY_MAPS_DIR, infer_scheduler, 
+                                        ano_dataset.test_anomaly_large_loader_metrics_small, 
+                                        ano_dataset.test_anomaly_large_images_metrics, 
+                                        ano_dataset.test_masks_large_loader_metrics_small, 
+                                        timesteps=best_num_timesteps, 
+                                        threshold=best_threshold, 
+                                        median_filter_size=best_median_filter_size, 
+                                        erosion_dilation_iterations=best_erosion_dilation_iterations, 
+                                        binary_fill_holes_param=best_binary_fill_holes)
+
+            
+            metrics_result_text = "SOOP fast\n"
+            metrics_result_text += "".join([f"{key}: mean {final_scores[key][0]} 95% CI [{final_scores[key][1]} - {final_scores[key][2]}]\n" for key in final_scores])
+            
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
+            metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}\n"
+
+            dtprint(metrics_result_text)
+
+            # Save metrics results to CSV file
+            metrics_df = pd.DataFrame({
+                'metric': list(final_scores.keys()),
+                'mean': [final_scores[key][0] for key in final_scores],
+                'lower_ci': [final_scores[key][1] for key in final_scores],
+                'upper_ci': [final_scores[key][2] for key in final_scores]
+            })
+            metrics_df.to_csv(metrics_csv_path, index=False)
+
+            
+            if args.show_summary_figures:
+                dtprint("Making summary figure...")
+                show_summary_figure(args, 
+                                    device, 
+                                    model, 
+                                    infer_scheduler, 
+                                    ano_dataset.test_anomaly_large_loader_metrics_small, 
+                                    ano_dataset.test_masks_large_loader_metrics_small, 
+                                    timesteps=best_num_timesteps, 
+                                    median_filter_size=best_median_filter_size, 
+                                    threshold=best_threshold, 
+                                    erosion_dilation_iterations=best_erosion_dilation_iterations,
+                                    binary_fill_holes_param=best_binary_fill_holes,
+                                    metrics_result_text=metrics_result_text,
+                                    ROOT_DIR=ROOT_DIR,
+                                    EXPERIMENT_NAME=EXPERIMENT_NAME,
+                                    SUB_EXPERIMENT_NAME=SUB_EXPERIMENT_NAME
+                                    )
+            

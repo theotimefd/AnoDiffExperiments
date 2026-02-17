@@ -25,25 +25,20 @@ import random
 from typing import Dict, List, Optional, Sequence, Tuple
 import nibabel as nib
 
-from monai.inferers import DiffusionInferer
-from monai.networks.nets import DiffusionModelUNet
+
 from monai.networks.schedulers import DDPMScheduler
 
-from monai.utils import StrEnum
-from typing import Union
 
-import pandas as pd
 
 import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import *
 
-from monai.metrics import compute_iou
 
-from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
 
-import lpips
+from monai.metrics import PSNRMetric, SSIMMetric
+
 
 def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
     # to be used only on mri images with intensities between 0 and 1
@@ -348,7 +343,7 @@ def launch_compute_metrics_reconstruction(args):
                         patient_id = os.path.basename(test_reconstruction_datalist[i*batch_size+idx]).split('.')[0]
                         reconstructed_map_path = os.path.join(ROOT_DIR+f"datasets/{SUB_EXPERIMENT_NAME}/noise_{noise_timesteps}", f"reconstructed_image_{patient_id}.nii.gz")
                         if os.path.exists(reconstructed_map_path):
-                            tprint(f"Reconstructed image for patient {patient_id} at noise timesteps {noise_timesteps} already exists, skipping inference.")
+                            dtprint(f"Reconstructed image for patient {patient_id} at noise timesteps {noise_timesteps} already exists, skipping inference.")
                             continue
 
                         volume = test_reconstruction_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
@@ -400,16 +395,16 @@ def launch_compute_metrics_reconstruction(args):
             ssim[noise_timesteps].append(ssim_metric_3d(test_reconstruction_images, infered_batch).detach().cpu().numpy().flatten())
             psnr[noise_timesteps].append(psnr_metric(infered_batch, test_reconstruction_images).detach().cpu().numpy().flatten())
 
-        tprint(f"Computed metrics for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data.")
-        tprint(f"Processed batch {i} of test reconstruction data.")
-        tprint(f"Total processed volumes: {(i+1) * test_reconstruction_images.shape[0]}.")
+        dtprint(f"Computed metrics for noise timesteps {noise_timesteps} on batch {i} of test reconstruction data.")
+        dtprint(f"Processed batch {i} of test reconstruction data.")
+        dtprint(f"Total processed volumes: {(i+1) * test_reconstruction_images.shape[0]}.")
 
 
-        tprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
+        dtprint(f" Noise timesteps: {noise_timesteps}: MSE: {np.mean(mse[noise_timesteps]):.4f}, PSNR: {np.mean(psnr[noise_timesteps]):.2f}, SSIM: {np.mean(ssim[noise_timesteps]):.4f}")
     
 
     # ----------- VISUALIZATION OF A BATCH -----------
-    infer_timesteps_visualize = int(args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
+    infer_timesteps_visualize = int(args.noise["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"])
 
 
     for i,(image_batch) in enumerate(test_reconstruction_loader): #TODO use less than 1 batch, only 4 images for visualization otherwise its too long
@@ -461,22 +456,6 @@ def launch_compute_metrics_reconstruction(args):
         axes[0, idx*2+1].set_ylim(0, 2000)
         axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
         
-        """
-        # First noisy images
-
-        first_noisy_image_no_background = first_noisy_images[idx, 0].cpu().numpy().copy()
-        first_noisy_image_no_background[original_image < 0.01] = 0.0
-        
-
-        #axes[1, idx*2].imshow(noisy_image, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].imshow(first_noisy_image_no_background, cmap='gray', vmin=-1, vmax=1)
-        axes[1, idx*2].set_title(f'Noisy {idx+1}, {args.compute_metrics_reconstruction["noise_rate_visualize"]*100}% noise (timesteps={infer_timesteps_visualize})')
-        axes[1, idx*2].axis('off')
-
-        axes[1, idx*2+1].hist(first_noisy_image_no_background.flatten(), bins=50, color='blue', alpha=0.7, range=(-0.3, 1.0))
-        axes[1, idx*2+1].set_ylim(0, 2000)
-        axes[1, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
-        """
 
         
         # Inferred images
@@ -622,7 +601,7 @@ def launch_compute_metrics_reconstruction(args):
     for idx in range(8):
         axes[5, idx].axis('off')
 
-    timesteps_visualize = args.compute_metrics_reconstruction["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"]+1
+    timesteps_visualize = args.noise["noise_rate_visualize"]*args.noise["num_timesteps_full_noise"]+1
     plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {timesteps_visualize} noise:\nPSNR: {np.mean(psnr[timesteps_visualize]):.2f} ± {np.std(psnr[timesteps_visualize]):.2f}\nSSIM: {np.mean(ssim[timesteps_visualize]):.4f} ± {np.std(ssim[timesteps_visualize]):.4f}\nMSE: {np.mean(mse[timesteps_visualize]):.4f} ± {np.std(mse[timesteps_visualize]):.4f}", fontsize=16)
 
 

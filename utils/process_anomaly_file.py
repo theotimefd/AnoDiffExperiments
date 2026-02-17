@@ -9,9 +9,6 @@ sys.path.append("../..")
 
 
 import numpy as np
-import json
-import argparse
-import csv
 import torch
 from tqdm import tqdm
 
@@ -58,7 +55,7 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
             filtered_np = median_filter(anomaly_map, size=median_filter_size)
             filtered_maps[median_filter_size] = torch.from_numpy(filtered_np)
     filter_elapsed_time = time.time() - filter_start_time
-    tprint(f"Filtered anomaly maps computed in {filter_elapsed_time:.4f} seconds for {anomaly_file}")
+    #dtprint(f"Filtered anomaly maps computed in {filter_elapsed_time:.4f} seconds for {anomaly_file}")
 
     
     other_processing_start_time = time.time()
@@ -99,6 +96,6 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
                     local_iou_scores[idx] = np.sum(iou_scores)
                     local_dice_scores[idx] = np.sum(dice_scores)
     other_processing_elapsed_time = time.time() - other_processing_start_time
-    tprint(f"Other processing (thresholding, erosion/dilation, scoring) completed in {other_processing_elapsed_time:.4f} seconds for {anomaly_file}")
+    #dtprint(f"Other processing (thresholding, erosion/dilation, scoring) completed in {other_processing_elapsed_time:.4f} seconds for {anomaly_file}")
     
     return local_iou_scores, local_dice_scores
