@@ -31,34 +31,31 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
     assert y_pred.ndim == 5 and y_true.ndim == 5, "Inputs must be 5D tensors in BCHWD format."
     
     dice_metric = DiceMetric(include_background=False, reduction="sum")
+
     
-    iou_scores = []
-    dice_scores = []
-    hausdorff_distances = []
     precision_scores = []
     recall_scores = []
     f1_scores = []
 
     # IoU
-    iou_score = compute_iou(y_pred, y_true)
-    flattened_iou_score = iou_score.cpu().numpy().flatten()
-    flattened_iou_score = flattened_iou_score[~np.isnan(flattened_iou_score)] # remove NaN values
-    iou_scores.append(flattened_iou_score)
+    iou_scores = compute_iou(y_pred, y_true)
+    flattened_iou_scores = iou_scores.cpu().numpy().flatten()
+    flattened_iou_scores = flattened_iou_scores[~np.isnan(flattened_iou_scores)] # remove NaN values
 
     # DICE
-    dice_score = dice_metric(y_pred, y_true).cpu().numpy().flatten()
-    dice_score = dice_score[~np.isnan(dice_score)] # remove NaN values
-    dice_scores.append(dice_score)
+    dice_scores = dice_metric(y_pred, y_true).cpu().numpy().flatten()
+    dice_scores = dice_scores[~np.isnan(dice_scores)] # remove NaN values
+
 
     if only_dice_iou:
-        return list(np.concatenate(iou_scores)), list(np.concatenate(dice_scores)), [], [], [], []
+        return list(iou_scores), list(dice_scores), [], [], [], []
 
 
     # Hausdorff Distance
-    hausdorff_distance = compute_hausdorff_distance(y_pred, y_true)
-    flattened_hausdorff_distance = hausdorff_distance.cpu().numpy().flatten()
-    flattened_hausdorff_distance = flattened_hausdorff_distance[~np.isnan(flattened_hausdorff_distance)] # remove NaN values
-    hausdorff_distances.append(flattened_hausdorff_distance)
+    hausdorff_distances = compute_hausdorff_distance(y_pred, y_true)
+    flattened_hausdorff_distances = hausdorff_distances.cpu().numpy().flatten()
+    flattened_hausdorff_distances = flattened_hausdorff_distances[~np.isnan(flattened_hausdorff_distances)] # remove NaN values
+    
 
     # Precision, Recall, F1
     batch_size = y_pred.shape[0]
@@ -79,7 +76,7 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
         recall_scores.append(recall)
         f1_scores.append(f1)
 
-    return list(np.concatenate(iou_scores)), list(np.concatenate(dice_scores)), list(np.concatenate(hausdorff_distances)), list(np.concatenate(precision_scores)), list(np.concatenate(recall_scores)), list(np.concatenate(f1_scores))
+    return list(iou_scores), list(dice_scores), list(hausdorff_distances), list(precision_scores), list(recall_scores), list(f1_scores)
     
 
 def make_confidence_intervals(scores_list, bootstrap_rounds=200):
