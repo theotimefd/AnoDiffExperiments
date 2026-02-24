@@ -114,7 +114,7 @@ def launch_train_full_volume(args):
     with open(train_csv, mode='r') as file:
         reader = csv.reader(file)
         for line in reader:
-            if line not in exclude_list:
+            if line[0] not in exclude_list:
                 train_images_path.append(ROOT_DIR+line[0])
 
     val_csv = os.path.join(ROOT_DIR, f"AnoDiffExperiments/data_splits_lists/{args.dataset['name']}/val.csv")
@@ -123,7 +123,7 @@ def launch_train_full_volume(args):
     with open(val_csv, mode='r') as file:
         reader = csv.reader(file)
         for line in reader:
-            if line not in exclude_list:
+            if line[0] not in exclude_list:
                 val_images_path.append(ROOT_DIR+line[0])
 
     #train_datalist = sorted(train_images_path)

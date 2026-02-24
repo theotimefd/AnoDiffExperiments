@@ -71,15 +71,18 @@ def process_anomaly_file(anomaly_file, anomaly_maps_folder, masks_folder,
                 for binary_fill_holes_param in binary_fill_holes_to_try:
 
                     if erosion_dilation_iterations > 0:
+                        
                         ano_segmentation_np = ano_segmentation_base.cpu().numpy()
                         
                         ano_segmentation_np = binary_erosion(ano_segmentation_np, iterations=erosion_dilation_iterations)
                         ano_segmentation_np = binary_dilation(ano_segmentation_np, iterations=erosion_dilation_iterations)
 
-                        if binary_fill_holes_param==1:
-                            
-                            ano_segmentation_np = binary_fill_holes(ano_segmentation_np)
-                            
+                        ano_segmentation = torch.from_numpy(ano_segmentation_np)
+
+                    if binary_fill_holes_param==1:
+                        ano_segmentation_np = ano_segmentation_base.cpu().numpy()
+
+                        ano_segmentation_np = binary_fill_holes(ano_segmentation_np)
 
                         ano_segmentation = torch.from_numpy(ano_segmentation_np)
                     else:

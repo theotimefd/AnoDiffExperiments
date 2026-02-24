@@ -159,7 +159,6 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR,
                     final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
                 
                 
-
         #tprint(f"unprocessed anomaly map shape: {final_anomaly_map.shape}")
 
         if not no_masks:
@@ -194,26 +193,34 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR,
     if no_masks:
         return
 
-    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(iou_scores).flatten())
+    # Flatten nested lists before converting to numpy array
+    flat_iou = [item for sublist in iou_scores for item in sublist]
+    flat_dice = [item for sublist in dice_scores for item in sublist]
+    flat_hausdorff = [item for sublist in hausdorff_distances for item in sublist]
+    flat_precision = [item for sublist in precision_scores for item in sublist]
+    flat_recall = [item for sublist in recall_scores for item in sublist]
+    flat_f1 = [item for sublist in f1_scores for item in sublist]
+
+    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(flat_iou))
     
-    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(dice_scores).flatten())
+    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(flat_dice))
 
-    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(hausdorff_distances).flatten())
+    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(flat_hausdorff))
 
-    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(precision_scores).flatten())
+    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(flat_precision))
 
-    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(recall_scores).flatten())
+    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(flat_recall))
     
-    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(f1_scores).flatten())
+    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(flat_f1))
 
 
     final_scores = {
-        "iou": [np.round(mean_iou, 4), np.round(lower_iou, 4), np.round(upper_iou, 4)],
-        "dice": [np.round(mean_dice, 4), np.round(lower_dice, 4), np.round(upper_dice, 4)],
-        "hausdorff": [np.round(mean_hausdorff, 4), np.round(lower_hausdorff, 4), np.round(upper_hausdorff, 4)],
-        "precision": [np.round(mean_precision, 4), np.round(lower_precision, 4), np.round(upper_precision, 4)],
-        "recall": [np.round(mean_recall, 4), np.round(lower_recall, 4), np.round(upper_recall, 4)],
-        "f1": [np.round(mean_f1, 4), np.round(lower_f1, 4), np.round(upper_f1, 4)]
+        "iou": [round(mean_iou, 4), round(lower_iou, 4), round(upper_iou, 4)],
+        "dice": [round(mean_dice, 4), round(lower_dice, 4), round(upper_dice, 4)],
+        "hausdorff": [round(mean_hausdorff, 4), round(lower_hausdorff, 4), round(upper_hausdorff, 4)],
+        "precision": [round(mean_precision, 4), round(lower_precision, 4), round(upper_precision, 4)],
+        "recall": [round(mean_recall, 4), round(lower_recall, 4), round(upper_recall, 4)],
+        "f1": [round(mean_f1, 4), round(lower_f1, 4), round(upper_f1, 4)]
     }
 
     return final_scores
@@ -327,7 +334,7 @@ def show_summary_figure(args, device, autoencoder, unet, infer_scheduler,
         else:
             final_anomaly_map = difference_image
         
-        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=0.5)
         axes[2, idx*2].set_title(f'Difference {idx+1}, median filter size: {median_filter_size}')
         axes[2, idx*2].axis('off')
 
@@ -552,7 +559,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                         ano_dataset.test_anomaly_loader_metrics, 
                                         ano_dataset.test_anomaly_images_metrics, 
                                         ano_dataset.test_masks_loader_metrics, 
-                                        timesteps=best_num_timesteps, 
+                                        infer_timesteps=best_num_timesteps, 
                                         threshold=best_threshold, 
                                         median_filter_size=best_median_filter_size, 
                                         erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -588,7 +595,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                 infer_scheduler, 
                                 ano_dataset.test_anomaly_large_loader_metrics, 
                                 ano_dataset.test_masks_large_loader_metrics, 
-                                timesteps=best_num_timesteps, 
+                                infer_timesteps=best_num_timesteps, 
                                 median_filter_size=best_median_filter_size, 
                                 threshold=best_threshold, 
                                 erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -646,7 +653,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                             ano_dataset.get_anomaly_loader_metrics(group), 
                                             ano_dataset.get_anomaly_images_metrics(group), 
                                             ano_dataset.get_masks_loader_metrics(group), 
-                                            timesteps=best_num_timesteps, 
+                                            infer_timesteps=best_num_timesteps, 
                                             threshold=best_threshold, 
                                             median_filter_size=best_median_filter_size, 
                                             erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -681,7 +688,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                     infer_scheduler, 
                                     ano_dataset.get_anomaly_loader_metrics(group), 
                                     ano_dataset.get_masks_loader_metrics(group), 
-                                    timesteps=best_num_timesteps, 
+                                    infer_timesteps=best_num_timesteps, 
                                     median_filter_size=best_median_filter_size, 
                                     threshold=best_threshold, 
                                     erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -733,7 +740,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                         ano_dataset.test_anomaly_large_loader_metrics_small, 
                                         ano_dataset.test_anomaly_large_images_metrics, 
                                         ano_dataset.test_masks_large_loader_metrics_small, 
-                                        timesteps=best_num_timesteps, 
+                                        infer_timesteps=best_num_timesteps, 
                                         threshold=best_threshold, 
                                         median_filter_size=best_median_filter_size, 
                                         erosion_dilation_iterations=best_erosion_dilation_iterations, 
@@ -770,7 +777,7 @@ def launch_compute_metrics_anomaly_detection_diffusion(args):
                                     infer_scheduler, 
                                     ano_dataset.test_anomaly_large_loader_metrics_small, 
                                     ano_dataset.test_masks_large_loader_metrics_small, 
-                                    timesteps=best_num_timesteps, 
+                                    infer_timesteps=best_num_timesteps, 
                                     median_filter_size=best_median_filter_size, 
                                     threshold=best_threshold, 
                                     erosion_dilation_iterations=best_erosion_dilation_iterations,

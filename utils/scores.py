@@ -43,12 +43,12 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
     flattened_iou_scores = flattened_iou_scores[~np.isnan(flattened_iou_scores)] # remove NaN values
 
     # DICE
-    dice_scores = dice_metric(y_pred, y_true).cpu().numpy().flatten()
-    dice_scores = dice_scores[~np.isnan(dice_scores)] # remove NaN values
+    flattened_dice_scores = dice_metric(y_pred, y_true).cpu().numpy().flatten()
+    flattened_dice_scores = flattened_dice_scores[~np.isnan(flattened_dice_scores)] # remove NaN values
 
 
     if only_dice_iou:
-        return list(iou_scores), list(dice_scores), [], [], [], []
+        return list(flattened_iou_scores), list(flattened_dice_scores), [], [], [], []
 
 
     # Hausdorff Distance
@@ -76,7 +76,7 @@ def compute_scores(y_pred, y_true, only_dice_iou=False):
         recall_scores.append(recall)
         f1_scores.append(f1)
 
-    return list(iou_scores), list(dice_scores), list(hausdorff_distances), list(precision_scores), list(recall_scores), list(f1_scores)
+    return list(flattened_iou_scores), list(flattened_dice_scores), list(flattened_hausdorff_distances), list(precision_scores), list(recall_scores), list(f1_scores)
     
 
 def make_confidence_intervals(scores_list, bootstrap_rounds=200):

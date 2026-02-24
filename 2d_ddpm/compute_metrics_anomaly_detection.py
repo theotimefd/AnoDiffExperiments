@@ -13,7 +13,7 @@ sys.path.append("../..")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from monai.utils import set_determinism, StrEnum
+from monai.utils import set_determinism
 from torch.amp import autocast
 from tqdm import tqdm
 import nibabel as nib
@@ -30,7 +30,7 @@ import utils.simplex_ddpm as simplex_ddpm
 import utils.scores as scores
 
 from utils.utils import *
-from sample import my_sample
+from sample import my_sample, sample_thor
 from make_anomaly_maps import make_anomaly_maps
 from datasets import anomaly_datasets
 
@@ -102,7 +102,11 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
 
             # infer slice by slice
             for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                if args.thor["enable"]:
+                    infered_slice, _ = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                else:
+                    infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                
                 infered_slices.append(infered_slice.unsqueeze(-1))
 
             # stack the slices back to a 3D volume
@@ -171,26 +175,34 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
     if no_masks:
         return {}
 
-    
-    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(iou_scores).flatten())
-    
-    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(dice_scores).flatten())
+    # Flatten nested lists before converting to numpy array
+    flat_iou = [item for sublist in iou_scores for item in sublist]
+    flat_dice = [item for sublist in dice_scores for item in sublist]
+    flat_hausdorff = [item for sublist in hausdorff_distances for item in sublist]
+    flat_precision = [item for sublist in precision_scores for item in sublist]
+    flat_recall = [item for sublist in recall_scores for item in sublist]
+    flat_f1 = [item for sublist in f1_scores for item in sublist]
 
-    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(hausdorff_distances).flatten())
-
-    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(precision_scores).flatten())
-
-    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(recall_scores).flatten())
     
-    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(f1_scores).flatten())
+    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(flat_iou))
+    
+    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(flat_dice))
+
+    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(flat_hausdorff))
+
+    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(flat_precision))
+
+    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(flat_recall))
+    
+    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(flat_f1))
 
     final_scores = {
-        "iou": [np.round(mean_iou, 4), np.round(lower_iou, 4), np.round(upper_iou, 4)],
-        "dice": [np.round(mean_dice, 4), np.round(lower_dice, 4), np.round(upper_dice, 4)],
-        "hausdorff": [np.round(mean_hausdorff, 4), np.round(lower_hausdorff, 4), np.round(upper_hausdorff, 4)],
-        "precision": [np.round(mean_precision, 4), np.round(lower_precision, 4), np.round(upper_precision, 4)],
-        "recall": [np.round(mean_recall, 4), np.round(lower_recall, 4), np.round(upper_recall, 4)],
-        "f1": [np.round(mean_f1, 4), np.round(lower_f1, 4), np.round(upper_f1, 4)]
+        "iou": [round(mean_iou, 4), round(lower_iou, 4), round(upper_iou, 4)],
+        "dice": [round(mean_dice, 4), round(lower_dice, 4), round(upper_dice, 4)],
+        "hausdorff": [round(mean_hausdorff, 4), round(lower_hausdorff, 4), round(upper_hausdorff, 4)],
+        "precision": [round(mean_precision, 4), round(lower_precision, 4), round(upper_precision, 4)],
+        "recall": [round(mean_recall, 4), round(lower_recall, 4), round(upper_recall, 4)],
+        "f1": [round(mean_f1, 4), round(lower_f1, 4), round(upper_f1, 4)]
     }
 
     return final_scores
@@ -226,11 +238,13 @@ def show_summary_figure(args, device, model, infer_scheduler,
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
             # Perform 3 inferences and average the results
-            infered_images = []
-            for _ in range(3):
-                infered_images.append(my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False))
-            average_infered_image = torch.stack(infered_images, dim=0).mean(dim=0)
-            average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
+            
+            if args.thor["enable"]:
+                infered_image, _ = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+            else:
+                infered_image = my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+            
+            infered_image = torch.clamp(scale_intensity_from_histogram_peak(infered_image, 2.0/7.0), 0.0, 1.0)
         
         
 
@@ -255,18 +269,18 @@ def show_summary_figure(args, device, model, infer_scheduler,
 
         # 3x average inferred images
         #print(average_infered_image.shape)
-        average_infered_image_cpu = average_infered_image[idx, 0].cpu().numpy()
+        infered_image_cpu = infered_image[idx, 0].cpu().numpy()
         
-        axes[1, idx*2].imshow(average_infered_image_cpu, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].imshow(infered_image_cpu, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(average_infered_image_cpu[average_infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(infered_image_cpu[infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # Difference images
-        difference_image = np.abs(original_image - average_infered_image_cpu)
+        difference_image = np.abs(original_image - infered_image_cpu)
         # apply median filter if specified
         if median_filter_size is not None and median_filter_size > 0:
             final_anomaly_map_np = difference_image
@@ -276,7 +290,7 @@ def show_summary_figure(args, device, model, infer_scheduler,
         else:
             final_anomaly_map = difference_image
         
-        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=1)
+        axes[2, idx*2].imshow(final_anomaly_map, cmap='jet', vmin=0, vmax=0.5)
         axes[2, idx*2].set_title(f'Difference {idx+1}, median filter size: {median_filter_size}')
         axes[2, idx*2].axis('off')
 
@@ -349,8 +363,13 @@ def launch_compute_metrics_anomaly_detection(args):
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
-    ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    if args.thor["enable"] == False:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    else:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params_thor/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_thor/" # final anomaly maps with best params
+
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
@@ -433,7 +452,7 @@ def launch_compute_metrics_anomaly_detection(args):
         else:
             dtprint(f"Best parameters already computed: {best_params_csv_path}")        
 
-        # Check if the final mterics have already been computed
+        # Check if the final metrics have already been computed
         metrics_csv_path = SUB_EXPERIMENT_DIR + f"metrics_{args.dataset['test']}.csv"
 
         if not os.path.exists(metrics_csv_path):

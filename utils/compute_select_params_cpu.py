@@ -68,7 +68,7 @@ def compute_select_params_multithreaded(args,
     dice_scores_df.fillna(0.0, inplace=True)
     dice_scores_df.index.names = ['timesteps', 'threshold', 'median_filter_size', 'erosion_dilation_iterations', 'binary_fill_holes']
     
-    tprint(f"num timesteps to try: {num_timesteps_to_try}")
+    dtprint(f"num timesteps to try: {num_timesteps_to_try}")
 
     # list all anomaly map files in the input folder
     anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
@@ -89,7 +89,7 @@ def compute_select_params_multithreaded(args,
     )
 
     max_workers = min(192, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#the-kraken-platform
-    tprint(f"Using max_workers={max_workers} for multiprocessing")
+    dtprint(f"Using max_workers={max_workers} for multiprocessing")
     ctx = mp.get_context("spawn")
 
     if len(anomaly_files) == 1 or max_workers == 1:
@@ -103,7 +103,7 @@ def compute_select_params_multithreaded(args,
 
 
     
-    tprint("multiprocesses all finished")
+    dtprint("multiprocesses all finished")
 
     # Aggregate results from all processes
     for local_iou_scores, local_dice_scores in results:
@@ -134,8 +134,19 @@ def launch_compute_select_params_cpu(args):
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
-    ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    try:
+        is_thor = args.thor["enable"]
+    except:
+        is_thor = False
+    
+    dtprint(f"THOR enabled: {is_thor}")
+
+    if is_thor == False:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    else:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params_thor/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_thor/" # final anomaly maps with best params
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
@@ -314,11 +325,11 @@ def launch_compute_select_params_cpu(args):
 
             metrics_result_text = "Small group\n"
 
-            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps} "
-            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size} "
-            metrics_result_text += f"Best Threshold: {best_threshold:.4f} "
-            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations} "
-            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes}"
+            metrics_result_text += f"Best Number of Timesteps: {best_num_timesteps_small_group} "
+            metrics_result_text += f"Best Median Filter Size: {best_median_filter_size_small_group} "
+            metrics_result_text += f"Best Threshold: {best_threshold_small_group:.4f} "
+            metrics_result_text += f"Best Erosion Dilation Iterations: {best_erosion_dilation_iterations_small_group} "
+            metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_small_group}"
             metrics_result_text += "\n"
             tprint(metrics_result_text)
     

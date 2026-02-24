@@ -1,6 +1,6 @@
 import sys
 sys.path.append("../..")
-from sample import my_sample
+from sample import my_sample, sample_thor
 import nibabel as nib
 import os
 import torch
@@ -26,7 +26,10 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
 
             # infer slice by slice
             for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                if args.thor["enable"]:
+                    infered_slice, _ = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                else:
+                    infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
                 infered_slices.append(infered_slice.unsqueeze(-1))
 
             # stack the slices back to a 3D volume
