@@ -1,9 +1,5 @@
 import os
-import time
-import glob
 import sys
-import argparse
-import json
 from pathlib import Path
 sys.path.append("../..")
 #import opensimplex
@@ -15,34 +11,17 @@ import numpy as np
 import csv
 import torch
 import torch.nn.functional as F
-from monai import transforms
-from monai.data import CacheDataset, DataLoader, Dataset
+from monai.data import CacheDataset, DataLoader
 from monai.utils import set_determinism
-from monai.data.utils import pad_list_data_collate
 from torch.amp import autocast
 from tqdm import tqdm
-import random
-
-import nibabel as nib
-
-from monai.inferers import DiffusionInferer
-from monai.networks.nets import DiffusionModelUNet
-from monai.networks.schedulers import DDPMScheduler
 
 
-from monai.utils import StrEnum
-from typing import Union
-
-import pandas as pd
-
-import utils.custom_transforms as custom_transforms
 import AnoDDPM.simplex as simplex
 import utils.simplex_ddpm as simplex_ddpm
 from utils.utils import define_instance
 
-from monai.metrics import compute_iou
-
-from monai.metrics import PSNRMetric, SSIMMetric, MultiScaleSSIMMetric
+from monai.metrics import PSNRMetric, SSIMMetric
 
 import lpips
 
@@ -68,15 +47,13 @@ def launch_compute_metrics_reconstruction_ae(args):
 
     IMAGE_SIZE = args.image_size
 
-    model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
-
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
     torch.autograd.set_detect_anomaly(False)
 
-    NOISE_MIN = int(args.compute_metrics_reconstruction["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
-    NOISE_MAX = int(args.compute_metrics_reconstruction["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
-    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.compute_metrics_reconstruction["noise_timesteps_interval"])
+    NOISE_MIN = int(args.noise["noise_rate_min"]*args.noise["num_timesteps_full_noise"])
+    NOISE_MAX = int(args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"])+1
+    NOISE_RANGE = range(NOISE_MIN,NOISE_MAX,args.noise["noise_timesteps_interval"])
 
     plt.rcParams['axes.facecolor']='white'
     plt.rcParams['savefig.facecolor']='white'
@@ -161,7 +138,6 @@ def launch_compute_metrics_reconstruction_ae(args):
 
     for i,(image_batch) in enumerate(test_reconstruction_loader):
         if i>0:break
-
 
         test_reconstruction_images = image_batch.to(device)
 

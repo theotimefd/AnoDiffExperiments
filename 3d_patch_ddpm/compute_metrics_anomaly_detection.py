@@ -239,7 +239,7 @@ def show_summary_figure(args, device, model, infer_scheduler,
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_ldm_3d_volumes.png", transparent=False, dpi=150)
+    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_patch_ddpm_3d_volumes.png", transparent=False, dpi=150)
 
 
 def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, 

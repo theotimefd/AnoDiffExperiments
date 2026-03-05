@@ -33,7 +33,6 @@ def my_sample(args, model, device, image, infer_scheduler, timesteps, return_int
     intermediates = []
     intermediates_step = 20
 
-            
     for t in range(timesteps, 0, -1): # va de timesteps à 0
         
         model_output = model(
@@ -60,7 +59,7 @@ def sample_thor(args, model, device, image, infer_scheduler, timesteps=100, retu
         dtprint(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps-1)
     
     timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
-    timesteps_harmonization = np.linspace(10, args.noise["noise_rate_max"]*args.noise["num_timesteps_full_noise"]-1, num=args.thor["nb_timesteps_harmonization"], dtype=int).tolist()
+    timesteps_harmonization = np.linspace(10, timesteps, num=args.thor["nb_timesteps_harmonization"], dtype=int).tolist()
 
 
     simplexObj = simplex.Simplex_CLASS()

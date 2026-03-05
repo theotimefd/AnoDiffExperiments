@@ -31,7 +31,7 @@ def process_file(anomaly_file,
     ano_map = nib.load(os.path.join(combined_ano_maps_folder, anomaly_file))
     ano_map_data = ano_map.get_fdata()
 
-    mask_file = os.path.join(combined_masks_folder, anomaly_file)
+    mask_file = os.path.join(combined_masks_folder, anomaly_file.replace('_t_110', ''))
     mask_img = nib.load(mask_file)
     mask_data = mask_img.get_fdata()
 
@@ -103,16 +103,16 @@ def launch():
 
     ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 
-    GROUP = "small"
+    GROUP = "large"
 
-    adc_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_2_2_select_params/{GROUP}/"
-    adc_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_2_2/{GROUP}/"
+    adc_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_2_4_select_params/{GROUP}/"
+    adc_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_2_4/{GROUP}/"
 
-    flair_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_3_2_select_params/{GROUP}/"
-    flair_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_3_2/{GROUP}/"
+    flair_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_3_4_select_params/{GROUP}/"
+    flair_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/exp_3_4/{GROUP}/"
 
-    combined_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/combined_ano_maps_select_params/{GROUP}/"
-    combined_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/combined_ano_maps/{GROUP}/"
+    combined_anomaly_maps_select_params_folder = f"{ROOT_DIR}datasets/anomaly_maps/combined_ano_maps_select_params/3d_patch_ddpm/{GROUP}/"
+    combined_anomaly_maps_folder = f"{ROOT_DIR}datasets/anomaly_maps/combined_ano_maps/3d_patch_ddpm/{GROUP}/"
 
     combined_masks_folder = f"{ROOT_DIR}datasets/final_soop_dataset_small/masks_combined_registered/"
 

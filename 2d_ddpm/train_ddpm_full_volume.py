@@ -192,7 +192,7 @@ def launch_train_full_volume(args):
         best_val_loss = args.diffusion_train.get("last_best_val_loss", np.inf)
         best_val_epoch = args.diffusion_train.get("last_checkpoint_epoch", 0)
         model.load_state_dict(torch.load(MODELS_DIR+f"{SUB_EXPERIMENT_NAME}_best_model.pth", map_location=f"cuda:{device}"))
-                
+        
 
     inferer = DiffusionInferer(scheduler)
 

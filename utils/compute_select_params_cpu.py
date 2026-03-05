@@ -88,7 +88,7 @@ def compute_select_params_multithreaded(args,
         binary_fill_holes_to_try=binary_fill_holes_to_try
     )
 
-    max_workers = min(192, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#the-kraken-platform
+    max_workers = min(64, mp.cpu_count()) # 48 cores per gpu https://gricad-doc.univ-grenoble-alpes.fr/hpc/kraken/kraken/#the-kraken-platform
     dtprint(f"Using max_workers={max_workers} for multiprocessing")
     ctx = mp.get_context("spawn")
 

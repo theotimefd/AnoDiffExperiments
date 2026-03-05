@@ -12,7 +12,7 @@
         "test": "",
         "save_anomaly_maps":true,
         "batch_size": 16,
-        "num_workers": 16,
+        "num_workers": 2,
         "slice_indexes_start":22,
         "slice_indexes_end": 94
     },
@@ -103,9 +103,9 @@
     "diffusion_train": {
         "max_epochs": 6000,
         "val_interval": 10,
-        "resume_checkpoint": false,
-        "last_checkpoint_epoch":4800,
-        "last_best_val_loss":0.4019,
+        "resume_checkpoint": true,
+        "last_checkpoint_epoch":130,
+        "last_best_val_loss":0.9109,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5

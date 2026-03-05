@@ -17,6 +17,7 @@ from monai.utils import set_determinism
 from torch.amp import autocast
 from tqdm import tqdm
 import nibabel as nib
+from scipy import stats
 
 from monai.networks.schedulers import DDPMScheduler
 
@@ -103,7 +104,8 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
             # infer slice by slice
             for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
                 if args.thor["enable"]:
-                    infered_slice, _ = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
                 else:
                     infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
                 
@@ -240,7 +242,8 @@ def show_summary_figure(args, device, model, infer_scheduler,
             # Perform 3 inferences and average the results
             
             if args.thor["enable"]:
-                infered_image, _ = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                infered_image = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
             else:
                 infered_image = my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
             

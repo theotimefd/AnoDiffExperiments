@@ -9,7 +9,6 @@ from train_ddpm_full_volume import launch_train_full_volume
 from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 from utils.compute_select_params_cpu import launch_compute_select_params_cpu
-from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
 from anomaly_detection_inference import launch_anomaly_detection_inference
 
 from utils.utils import dtprint
@@ -70,10 +69,6 @@ def main():
         if step=="compute_select_params_cpu" and rank==0:
             dtprint("Launching compute_select_params_cpu")
             launch_compute_select_params_cpu(args)
-
-        if step=="compute_metrics_thor_anomaly_detection" and rank==0:
-            dtprint("Launching compute_metrics_thor_anomaly_detection")
-            launch_compute_metrics_thor_anomaly_detection(args)
         
         if step=="anomaly_detection_inference" and rank==0:
             dtprint("Launching anomaly_detection_inference")
