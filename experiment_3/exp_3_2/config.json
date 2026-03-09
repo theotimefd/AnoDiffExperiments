@@ -2,7 +2,7 @@
     "experiment_name": "experiment_3",
     "sub_experiment_name": "exp_3_2",
     "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["compute_metrics_anomaly_detection"],
+    "pipeline": ["anomaly_detection_inference"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -110,6 +110,10 @@
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],
         "ema":false
+    },
+    "thor": {
+        "enable": false,
+        "nb_timesteps_harmonization": 7
     },
     "anomaly_detection_param_search":{
         "median_filter_sizes": [-1, 5, 7, 10],

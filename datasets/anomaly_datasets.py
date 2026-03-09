@@ -227,6 +227,135 @@ class SOOP():
         else:
             raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
 
+
+class SOOP_large_only():
+    def __init__(self, 
+                 args,
+                 batch_size=64,
+                 num_workers=4,
+                ):
+        
+        self.args = args
+        self.root_dir = args.root_dir
+        self.transforms = transforms
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+    
+
+        masks_transforms = transforms.Compose(
+            [
+                transforms.LoadImage(),
+                transforms.EnsureChannelFirst(),
+                transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                custom_transforms.SetBackgroundToZero()
+            ]
+        )
+
+        # large, medium and small group split
+        # large: >15cm3, medium: 5-15cm3, small: <5cm3
+        large_group = ['sub-1010', 'sub-1013', 'sub-1015', 'sub-1032', 'sub-1035', 'sub-1039', 'sub-1041', 'sub-1045', 'sub-1046', 'sub-1071', 'sub-1073', 'sub-1086', 'sub-1102', 'sub-1107', 'sub-1115', 'sub-113', 'sub-114', 'sub-1149', 'sub-1150', 'sub-116', 'sub-1164', 'sub-1165', 'sub-118', 'sub-1200', 'sub-1204', 'sub-1209', 'sub-1213', 'sub-1215', 'sub-1223', 'sub-1227', 'sub-1232', 'sub-1246', 'sub-1258', 'sub-127', 'sub-1280', 'sub-1282', 'sub-1283', 'sub-1285', 'sub-1292', 'sub-1305', 'sub-1306', 'sub-1309', 'sub-1312', 'sub-1314', 'sub-1320', 'sub-1323', 'sub-135', 'sub-1354', 'sub-1355', 'sub-1358', 'sub-1364', 'sub-1366', 'sub-1369', 'sub-1373', 'sub-1379', 'sub-1382', 'sub-1386', 'sub-1395', 'sub-1409', 'sub-1410', 'sub-1413', 'sub-1422', 'sub-1432', 'sub-1445', 'sub-1447', 'sub-1475', 'sub-1478', 'sub-1480', 'sub-1483', 'sub-1485', 'sub-1488', 'sub-1507', 'sub-1508', 'sub-1511', 'sub-1517', 'sub-1552', 'sub-1554', 'sub-1555', 'sub-1569', 'sub-1598', 'sub-1612', 'sub-1634', 'sub-1637', 'sub-1656', 'sub-1670', 'sub-1677', 'sub-1719', 'sub-1725', 'sub-1727', 'sub-1736', 'sub-174', 'sub-177', 'sub-185', 'sub-190', 'sub-196', 'sub-198', 'sub-2', 'sub-221', 'sub-235', 'sub-241', 'sub-247', 'sub-249', 'sub-260', 'sub-262', 'sub-264', 'sub-278', 'sub-284', 'sub-294', 'sub-3', 'sub-303', 'sub-314', 'sub-321', 'sub-326', 'sub-335', 'sub-338', 'sub-339', 'sub-341', 'sub-343', 'sub-345', 'sub-359', 'sub-360', 'sub-366', 'sub-370', 'sub-374', 'sub-386', 'sub-398', 'sub-400', 'sub-401', 'sub-412', 'sub-42', 'sub-422', 'sub-432', 'sub-433', 'sub-443', 'sub-446', 'sub-447', 'sub-457', 'sub-463', 'sub-464', 'sub-466', 'sub-47', 'sub-494', 'sub-498', 'sub-501', 'sub-505', 'sub-512', 'sub-517', 'sub-521', 'sub-523', 'sub-525', 'sub-529', 'sub-53', 'sub-530', 'sub-539', 'sub-543', 'sub-56', 'sub-563', 'sub-572', 'sub-613', 'sub-620', 'sub-631', 'sub-634', 'sub-638', 'sub-651', 'sub-652', 'sub-661', 'sub-682', 'sub-692', 'sub-694', 'sub-698', 'sub-699', 'sub-707', 'sub-719', 'sub-723', 'sub-724', 'sub-751', 'sub-754', 'sub-760', 'sub-761', 'sub-768', 'sub-776', 'sub-789', 'sub-79', 'sub-791', 'sub-8', 'sub-803', 'sub-806', 'sub-82', 'sub-823', 'sub-826', 'sub-843', 'sub-844', 'sub-845', 'sub-858', 'sub-861', 'sub-865', 'sub-866', 'sub-873', 'sub-877', 'sub-881', 'sub-896', 'sub-917', 'sub-937', 'sub-939', 'sub-942', 'sub-946', 'sub-95', 'sub-952', 'sub-959', 'sub-960', 'sub-968', 'sub-990']
+        
+        if "flair" in self.args.dataset["name"].lower():
+            test_anomaly_images = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
+        elif "adc" in self.args.dataset["name"].lower():
+            test_anomaly_images = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/adc_registered/*.nii.gz"))
+
+        tests_anomaly_masks = glob.glob(self.root_dir+"datasets/final_soop_dataset_small/masks_combined_registered/*.nii.gz")
+
+
+        images_to_exclude = []
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude_non_axial_thick_slices.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+        
+        test_anomaly_transforms = define_instance(self.args, "val_transforms")
+
+        # final lists of images and masks path after excluding the bad images
+        self.test_anomaly_large_images = [path for path in test_anomaly_images if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        self.large_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
+
+        self.test_anomaly_large_images = sorted(self.test_anomaly_large_images, key=lambda x: os.path.basename(x).split('.')[0])
+        self.large_group_masks = sorted(self.large_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
+
+
+
+        # dataloaders
+        # each group of images is split into two halves:
+        # select params half: used to select the best noise timestep value, best threshold etc
+        # metrics half: used to compute the final scores (e.g DICE) with these best values.
+
+        # images
+        test_anomaly_large_ds = CacheDataset(data=self.test_anomaly_large_images, transform=test_anomaly_transforms)
+        
+        # large group
+        self.test_anomaly_large_loader_select_params = DataLoader( 
+            test_anomaly_large_ds[:len(test_anomaly_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:len(self.test_anomaly_large_images)//2]
+
+        self.test_anomaly_large_loader_metrics = DataLoader(       
+            test_anomaly_large_ds[len(test_anomaly_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[len(self.test_anomaly_large_images)//2:]
+
+        # masks
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+       
+        # large group
+        self.test_masks_large_loader_select_params = DataLoader(
+            self.test_masks_large_ds[:len(self.test_masks_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_large_loader_metrics = DataLoader(
+            self.test_masks_large_ds[len(self.test_masks_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+
+    def len_large_group(self):
+        return len(self.test_anomaly_large_images)
+    
+    def first(self):
+        return first(self.test_anomaly_large_loader_select_params)
+    
+    def get_anomaly_loader_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_loader_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_select_params(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_masks_loader_metrics(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_anomaly_images_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+    
+    def get_anomaly_images_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
 class SOOP_Fast():
     def __init__(self, 
                  args,

@@ -235,15 +235,15 @@ def launch_compute_select_params_cpu(args):
         # --------------------------------- large group
         os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
 
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_large_group.csv"
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}_large_group.csv"
 
         if not os.path.exists(best_params_csv_path):
             dtprint("Large group")
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
         
-            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_large_group.csv")
-            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_large_group.csv")
+            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_large_group.csv")
+            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_large_group.csv")
 
             # Find the best parameters based on IOU score
             best_params = iou_scores_df_large_group.idxmax()['IOU']
@@ -268,15 +268,15 @@ def launch_compute_select_params_cpu(args):
 
         # --------------------------------- medium group
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_medium_group.csv"
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}_medium_group.csv"
 
         if not os.path.exists(best_params_csv_path):
             dtprint("Medium group")
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-            
-            iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_medium_group.csv")
-            dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_medium_group.csv")
+            iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+
+            iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_medium_group.csv")
+            dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_medium_group.csv")
 
             # Find the best parameters based on IOU score
             best_params = iou_scores_df_medium_group.idxmax()['IOU']
@@ -301,16 +301,16 @@ def launch_compute_select_params_cpu(args):
 
         # --------------------------------- small group
         os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}_small_group.csv"
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}_small_group.csv"
 
         if not os.path.exists(best_params_csv_path):
             dtprint("Small group")
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+            iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
             
 
-            iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}_small_group.csv")
-            dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}_small_group.csv")
+            iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_small_group.csv")
+            dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_small_group.csv")
 
             # Find the best parameters based on IOU score
             best_params = iou_scores_df_small_group.idxmax()['IOU']
@@ -337,14 +337,14 @@ def launch_compute_select_params_cpu(args):
         
         # --------------------------------- large group
         
-        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset["test"]}.csv"
+        best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}.csv"
 
         if not os.path.exists(best_params_csv_path):
             dtprint(f"Computing best parameters with CPU...")
-            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+f"datasets/final_{args.dataset["test"]}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-            
-            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset["test"]}.csv")
-            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset["test"]}.csv")
+            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS, ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
+
+            iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}.csv")
+            dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}.csv")
 
             # Find the best parameters based on IOU score
             best_params = iou_scores_df_large_group.idxmax()['IOU']

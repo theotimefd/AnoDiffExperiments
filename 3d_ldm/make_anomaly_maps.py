@@ -43,7 +43,7 @@ def make_anomaly_maps(args, autoencoder, unet, device, scheduler, image_loader, 
 
     #inferer = LatentDiffusionInferer(infer_scheduler, scale_factor=scale_factor)
 
-    for i, image_batch in enumerate(image_loader):
+    for i, image_batch in tqdm(enumerate(image_loader)):
 
         test_images = image_batch.to(device)
 

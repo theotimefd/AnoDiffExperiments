@@ -64,6 +64,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     
     ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
     ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/for_combine_experiment/" # final anomaly maps with best params
+    dtprint(f"Anomaly maps best params will be saved in {ANOMALY_MAPS_DIR_SELECT_PARAMS}")
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
@@ -147,10 +148,10 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
 
         if no_abs_value:
             os.makedirs(ANOMALY_MAPS_DIR+"large_no_abs_value/", exist_ok=True)
-            make_anomaly_maps_optim(args, model, device, infer_scheduler=infer_scheduler, image_loader=ano_dataset.test_anomaly_large_loader_metrics, image_paths=ano_dataset.test_anomaly_large_images_select_params, infer_timesteps=best_num_timesteps_large_group, output_folder=ANOMALY_MAPS_DIR+"large_no_abs_value/", replace_existing_files=False, no_abs_value=no_abs_value)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler=infer_scheduler, image_loader=ano_dataset.test_anomaly_large_loader_metrics, image_paths=ano_dataset.test_anomaly_large_images_metrics, infer_timesteps=best_num_timesteps_large_group, output_folder=ANOMALY_MAPS_DIR+"large_no_abs_value/", replace_existing_files=False, no_abs_value=no_abs_value)
         else:
             os.makedirs(ANOMALY_MAPS_DIR+"large/", exist_ok=True)
-            make_anomaly_maps_optim(args, model, device, infer_scheduler=infer_scheduler, image_loader=ano_dataset.test_anomaly_large_loader_metrics, image_paths=ano_dataset.test_anomaly_large_images_select_params, infer_timesteps=best_num_timesteps_large_group, output_folder=ANOMALY_MAPS_DIR+"large/", replace_existing_files=False, no_abs_value=no_abs_value)
+            make_anomaly_maps_optim(args, model, device, infer_scheduler=infer_scheduler, image_loader=ano_dataset.test_anomaly_large_loader_metrics, image_paths=ano_dataset.test_anomaly_large_images_metrics, infer_timesteps=best_num_timesteps_large_group, output_folder=ANOMALY_MAPS_DIR+"large/", replace_existing_files=False, no_abs_value=no_abs_value)
         
         """metrics_result_text = f"Large group: mean IOU: {mean_iou:.4f} std: {std_iou:.4f} - mean DICE {mean_dice:.4f} std: {std_dice:.4f}\n"
 

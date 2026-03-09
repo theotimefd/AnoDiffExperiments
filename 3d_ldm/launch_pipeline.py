@@ -9,6 +9,7 @@ from compute_metrics_reconstruction_ae import launch_compute_metrics_reconstruct
 from compute_metrics_anomaly_detection_ae import launch_compute_metrics_anomaly_detection_ae
 from compute_metrics_reconstruction_diffusion import launch_compute_metrics_reconstruction_diffusion
 from compute_metrics_anomaly_detection_diffusion import launch_compute_metrics_anomaly_detection_diffusion
+from anomaly_detection_inference import launch_anomaly_detection_inference
 from utils.utils import dtprint
 
 def main():
@@ -72,6 +73,10 @@ def main():
         if step == "compute_metrics_anomaly_detection_diffusion" and rank == 0:
             dtprint("Launching anomaly detection metrics computation for diffusion model")
             launch_compute_metrics_anomaly_detection_diffusion(args)
+
+        if step=="anomaly_detection_inference" and rank == 0:
+            dtprint("Launching anomaly_detection_inference")
+            launch_anomaly_detection_inference(args)
 
 
 if __name__ == "__main__":
