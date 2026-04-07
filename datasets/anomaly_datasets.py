@@ -5,7 +5,7 @@ import glob
 
 from utils import custom_transforms
 from utils.utils import *
-
+import monai.transforms
 from monai import transforms
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first
@@ -438,6 +438,229 @@ class SOOP_Fast():
     def first(self):
         return first(self.test_anomaly_large_loader_select_params)
 
+
+class SOOP_Fast_adc_flair():
+    def __init__(self, 
+                 args,
+                 batch_size=64,
+                 num_workers=4,
+                ):
+        
+        self.args = args
+        self.root_dir = args.root_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+    
+
+        masks_transforms = monai.transforms.Compose(
+            [
+                monai.transforms.LoadImage(),
+                monai.transforms.EnsureChannelFirst(),
+                monai.transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                custom_transforms.SetBackgroundToZero()
+            ]
+        )
+
+        # Only keep first 8 subjects from large group
+        large_group = ['sub-1010', 'sub-1013', 'sub-1015', 'sub-1032', 'sub-1035', 'sub-1039', 'sub-1041', 'sub-1045']
+
+        
+        test_anomaly_images_flair = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
+        
+        test_anomaly_images_adc = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/adc_registered/*.nii.gz"))
+
+        tests_anomaly_masks = glob.glob(self.root_dir+"datasets/final_soop_dataset_small/masks_combined_registered/*.nii.gz")
+
+        images_to_exclude = []
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude_non_axial_thick_slices.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+        
+        test_anomaly_transforms = define_instance(self.args, "val_transforms")
+
+        # ------------ Masks ------------
+
+        self.large_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
+        self.large_group_masks = sorted(self.large_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
+
+        # masks
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+
+        self.test_masks_large_loader_select_params = DataLoader(
+            self.test_masks_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_large_loader_metrics = DataLoader(
+            self.test_masks_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        # ------------ ADC + FLAIR ------------
+
+        # Filter for large group only
+        self.test_anomaly_large_images_adc = [path for path in test_anomaly_images_adc if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        self.test_anomaly_large_images_adc = sorted(self.test_anomaly_large_images_adc, key=lambda x: os.path.basename(x).split('.')[0])
+
+        self.test_anomaly_large_images_flair = [path for path in test_anomaly_images_flair if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        self.test_anomaly_large_images_flair = sorted(self.test_anomaly_large_images_flair, key=lambda x: os.path.basename(x).split('.')[0])
+
+        self.datalist = [
+            {"adc": adc_path, "flair": flair_path}
+            for adc_path, flair_path in zip(self.test_anomaly_large_images_adc, self.test_anomaly_large_images_flair)
+        ]
+
+        transforms_def = define_instance(args, "val_transforms")
+
+        ano_transforms = monai.transforms.Compose([
+            *transforms_def.transforms,
+            monai.transforms.Lambda(func=lambda x: x["image"]),
+        ])
+
+
+        # dataloaders - split 8 images into 4 and 4
+        test_anomaly_large_ds = CacheDataset(data=self.datalist, transform=ano_transforms)
+        
+        # large group - select params (first 4)
+        self.test_anomaly_large_loader_select_params = DataLoader( 
+            test_anomaly_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_large_images_select_params_adc = self.test_anomaly_large_images_adc[:4]
+        self.test_anomaly_large_images_select_params_flair = self.test_anomaly_large_images_flair[:4]
+
+        # large group - metrics (last 4)
+        self.test_anomaly_large_loader_metrics = DataLoader(       
+            test_anomaly_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_anomaly_large_images_metrics_adc = self.test_anomaly_large_images_adc[:4]
+        self.test_anomaly_large_images_metrics_flair = self.test_anomaly_large_images_flair[:4]
+
+
+
+    def len_large_group(self):
+        return len(self.test_anomaly_large_images)
+
+    def first(self):
+        return first(self.test_anomaly_large_loader_select_params)
+
+
+class SOOP_Fast_adc_flair_t1w():
+    def __init__(self, 
+                 args,
+                 batch_size=64,
+                 num_workers=4,
+                ):
+        
+        self.args = args
+        self.root_dir = args.root_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+    
+
+        masks_transforms = monai.transforms.Compose(
+            [
+                monai.transforms.LoadImage(),
+                monai.transforms.EnsureChannelFirst(),
+                monai.transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                custom_transforms.SetBackgroundToZero()
+            ]
+        )
+
+        # Only keep first 8 subjects from large group
+        large_group = ['sub-1010', 'sub-1013', 'sub-1015', 'sub-1032', 'sub-1035', 'sub-1039', 'sub-1041', 'sub-1045']
+
+        
+        test_anomaly_images_flair = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
+        
+        test_anomaly_images_adc = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/adc_registered/*.nii.gz"))
+
+        test_anomaly_images_t1w = sorted(glob.glob(self.root_dir+"datasets/final_soop_dataset_small/t1w_registered/*.nii.gz"))
+
+        tests_anomaly_masks = glob.glob(self.root_dir+"datasets/final_soop_dataset_small/masks_combined_registered/*.nii.gz")
+
+        images_to_exclude = []
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+
+        with open(self.root_dir+"AnoDiffExperiments/data_splits_lists/final_soop_dataset_small/exclude_non_axial_thick_slices.csv", 'r') as f:
+            for line in f:
+                images_to_exclude.append(line.strip())
+        
+        test_anomaly_transforms = define_instance(self.args, "val_transforms")
+
+        # ------------ Masks ------------
+
+        self.large_group_masks = [path for path in tests_anomaly_masks if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
+        self.large_group_masks = sorted(self.large_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
+
+        # masks
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+
+        self.test_masks_large_loader_select_params = DataLoader(
+            self.test_masks_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_large_loader_metrics = DataLoader(
+            self.test_masks_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        # ------------ ADC + FLAIR + T1w ------------
+
+        # Filter for large group only
+        self.test_anomaly_large_images_adc = [path for path in test_anomaly_images_adc if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        self.test_anomaly_large_images_adc = sorted(self.test_anomaly_large_images_adc, key=lambda x: os.path.basename(x).split('.')[0])
+
+        self.test_anomaly_large_images_flair = [path for path in test_anomaly_images_flair if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]        
+        self.test_anomaly_large_images_flair = sorted(self.test_anomaly_large_images_flair, key=lambda x: os.path.basename(x).split('.')[0])
+
+        self.test_anomaly_large_images_t1w = [path for path in test_anomaly_images_t1w if os.path.basename(path).split('.')[0] not in images_to_exclude and os.path.basename(path).split('.')[0] in large_group]
+        self.test_anomaly_large_images_t1w = sorted(self.test_anomaly_large_images_t1w, key=lambda x: os.path.basename(x).split('.')[0])
+
+        self.datalist = [
+            {"adc": adc_path, "flair": flair_path, "t1w": t1w_path}
+            for adc_path, flair_path, t1w_path in zip(self.test_anomaly_large_images_adc, self.test_anomaly_large_images_flair, self.test_anomaly_large_images_t1w)
+        ]
+
+        transforms_def = define_instance(args, "val_transforms")
+
+        ano_transforms = monai.transforms.Compose([
+            *transforms_def.transforms,
+            monai.transforms.Lambda(func=lambda x: x["image"]),
+        ])
+
+
+        # dataloaders - split 8 images into 4 and 4
+        test_anomaly_large_ds = CacheDataset(data=self.datalist, transform=ano_transforms)
+        
+        # large group - select params (first 4)
+        self.test_anomaly_large_loader_select_params = DataLoader( 
+            test_anomaly_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_large_images_select_params_adc = self.test_anomaly_large_images_adc[:4]
+        self.test_anomaly_large_images_select_params_flair = self.test_anomaly_large_images_flair[:4]
+        self.test_anomaly_large_images_select_params_t1w = self.test_anomaly_large_images_t1w[:4]
+        # large group - metrics (last 4)
+        self.test_anomaly_large_loader_metrics = DataLoader(       
+            test_anomaly_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_anomaly_large_images_metrics_adc = self.test_anomaly_large_images_adc[:4]
+        self.test_anomaly_large_images_metrics_flair = self.test_anomaly_large_images_flair[:4]
+        self.test_anomaly_large_images_metrics_t1w = self.test_anomaly_large_images_t1w[:4]
+
+
+
+    def len_large_group(self):
+        return len(self.test_anomaly_large_images)
+
+    def first(self):
+        return first(self.test_anomaly_large_loader_select_params)
 
 class ISLES():
 

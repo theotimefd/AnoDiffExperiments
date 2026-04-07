@@ -2,7 +2,7 @@
     "experiment_name": "experiment_2",
     "sub_experiment_name": "exp_2_4",
     "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["anomaly_detection_inference"],
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 3,
     "spatial_dims_val_test": 3,
     "image_size": 128,

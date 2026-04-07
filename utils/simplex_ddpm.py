@@ -22,9 +22,18 @@ def generate_simplex_noise(simplexObj, shape, octaves=6, persistence=0.8, freque
         simplex = simplexObj.rand_3d_octaves(shape=(shape[0], shape[0], shape[1]), octaves=octaves, persistence=persistence, frequency=frequency)[12,...]
     elif len(shape) == 3: 
         simplex = simplexObj.rand_3d_octaves(shape=shape, octaves=octaves, persistence=persistence, frequency=frequency)
+
     elif len(shape) == 4 and shape[1] == 1: # 2D to make it work with shapes of type (batch_size, 1, height, width)
         simplex = simplexObj.rand_3d_octaves(shape=(shape[0], shape[2], shape[3]), octaves=octaves, persistence=persistence, frequency=frequency)
         simplex = np.expand_dims(simplex, axis=1)
+
+    elif len(shape) == 4 and shape[1] >= 1: # 2D with multiple channels to make it work with shapes of type (batch_size, channels, height, width)
+        simplex = np.zeros((shape[1], shape[2], shape[3]))
+        for c in range(shape[1]):
+            # take a slice t from the 3-dimensional noise function as we found that artefacts 
+            # were introduced when sampling from the 2-dimensional noise function
+            simplex[c] = simplexObj.rand_3d_octaves(shape=(shape[2], shape[2], shape[3]), octaves=octaves, persistence=persistence, frequency=frequency)[12,...]
+
     elif len(shape)==5 and shape[1] == 1 : # 3D to make it work with shapes of type (batch_size, 1, depth, height, width)
         simplex_3d_volumes = [simplexObj.rand_3d_octaves(shape=(shape[2], shape[3], shape[4]), octaves=octaves, persistence=persistence, frequency=frequency) for _ in range(shape[0])]
         simplex = np.stack(simplex_3d_volumes, axis=0)

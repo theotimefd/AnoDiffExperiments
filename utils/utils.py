@@ -57,7 +57,7 @@ def dtprint(text):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {text}")
 
 
-def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
+def scale_intensity_from_histogram_peak(input_image, target_value=1.0, min_search_value=None):
     # scales the histogram peak (most occurred pixel intensity) to target value
     # to be used only on mri images with intensities between 0 and 1
     try:
@@ -65,7 +65,9 @@ def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
     except AttributeError:
         input_np = input_image
 
-    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
+    min_search_value = min_search_value if min_search_value is not None else np.max(input_np)/15.0
+
+    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(min_search_value, 0.8))
 
     peak_value = bin_edges[np.argmax(hist)]
 
