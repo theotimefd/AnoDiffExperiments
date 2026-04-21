@@ -2,7 +2,7 @@
     "experiment_name": "experiment_4",
     "sub_experiment_name": "exp_4_0",
     "description": "2D DDPM on flair and adc with simplex noise, validation on whole volume",
-    "pipeline": ["compute_metrics_reconstruction"],
+    "pipeline": ["train_ddpm_full_volume"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
@@ -128,17 +128,17 @@
         "spatial_dims": "@spatial_dims",
         "in_channels": 3,
         "out_channels": 3,
-        "channels":[32, 64, 64, 64],
+        "channels":[32, 64, 64, 128],
         "attention_levels":[false, true, true, true],
-        "num_head_channels":8,
+        "num_head_channels":12,
         "use_flash_attention":true
     },
     "diffusion_train": {
         "max_epochs": 6000,
         "val_interval": 10,
         "resume_checkpoint": true,
-        "last_checkpoint_epoch":980,
-        "last_best_val_loss":0.3877,
+        "last_checkpoint_epoch":350,
+        "last_best_val_loss":0.5313,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5

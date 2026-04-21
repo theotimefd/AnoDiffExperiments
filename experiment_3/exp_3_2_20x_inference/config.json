@@ -1,12 +1,13 @@
 {
     "experiment_name": "experiment_3",
-    "sub_experiment_name": "exp_3_2",
+    "sub_experiment_name": "exp_3_2_20x_inference",
     "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["anomaly_detection_inference_20x"],
+    "pipeline": ["compute_metrics_anomaly_detection"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
+    "nb_inferences": 20,
     "dataset":{
         "name": "final_flair_dataset_small_added_oasis",
         "test": "soop",

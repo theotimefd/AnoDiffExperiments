@@ -9,19 +9,38 @@ import monai.transforms
 from monai import transforms
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first
+from torch.utils.data import Subset
+
+
+def _subset_range(dataset, start, stop):
+    # Keep splits as lightweight index views rather than materialized slices.
+    return Subset(dataset, range(start, stop))
+
+
+def _subset_first_half(dataset):
+    split_idx = len(dataset) // 2
+    return _subset_range(dataset, 0, split_idx)
+
+
+def _subset_second_half(dataset):
+    split_idx = len(dataset) // 2
+    return _subset_range(dataset, split_idx, len(dataset))
 
 class SOOP():
     def __init__(self, 
                  args,
                  batch_size=64,
                  num_workers=4,
-                ):
+                 groups_to_load=['large', 'medium', 'small'],
+                 pin_memory=True):
         
         self.args = args
         self.root_dir = args.root_dir
         self.transforms = transforms
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.groups_to_load = groups_to_load
+        self.pin_memory = pin_memory
     
 
         masks_transforms = transforms.Compose(
@@ -87,85 +106,102 @@ class SOOP():
         # select params half: used to select the best noise timestep value, best threshold etc
         # metrics half: used to compute the final scores (e.g DICE) with these best values.
 
-        # images
-        test_anomaly_large_ds = CacheDataset(data=self.test_anomaly_large_images, transform=test_anomaly_transforms)
-        test_anomaly_medium_ds = CacheDataset(data=self.test_anomaly_medium_images, transform=test_anomaly_transforms)
-        test_anomaly_small_ds = CacheDataset(data=self.test_anomaly_small_images, transform=test_anomaly_transforms)
         
-        # large group
-        self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:len(test_anomaly_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:len(self.test_anomaly_large_images)//2]
+        if "large" in self.groups_to_load:
+            
+            test_anomaly_large_ds = CacheDataset(data=self.test_anomaly_large_images, transform=test_anomaly_transforms)
+            self.test_anomaly_large_loader_select_params = DataLoader( 
+                _subset_first_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:len(self.test_anomaly_large_images)//2]
 
-        self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[len(test_anomaly_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[len(self.test_anomaly_large_images)//2:]
+            self.test_anomaly_large_loader_metrics = DataLoader(       
+                _subset_second_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[len(self.test_anomaly_large_images)//2:]
 
-        # medium group
-        self.test_anomaly_medium_loader_select_params = DataLoader(
-            test_anomaly_medium_ds[:len(test_anomaly_medium_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_medium_images_select_params = self.test_anomaly_medium_images[:len(self.test_anomaly_medium_images)//2]
+            ## masks
+            self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+            self.test_masks_large_loader_select_params = DataLoader(
+                _subset_first_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_masks_large_loader_metrics = DataLoader(
+                _subset_second_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
 
-        self.test_anomaly_medium_loader_metrics = DataLoader(
-            test_anomaly_medium_ds[len(test_anomaly_medium_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_medium_images_metrics = self.test_anomaly_medium_images[len(self.test_anomaly_medium_images)//2:]
+        if "medium" in self.groups_to_load:
+            test_anomaly_medium_ds = CacheDataset(data=self.test_anomaly_medium_images, transform=test_anomaly_transforms)
+            self.test_anomaly_medium_loader_select_params = DataLoader(
+                _subset_first_half(test_anomaly_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_medium_images_select_params = self.test_anomaly_medium_images[:len(self.test_anomaly_medium_images)//2]
 
-        # small group
-        self.test_anomaly_small_loader_select_params = DataLoader(
-            test_anomaly_small_ds[:len(test_anomaly_small_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_small_images_select_params = self.test_anomaly_small_images[:len(self.test_anomaly_small_images)//2]
+            self.test_anomaly_medium_loader_metrics = DataLoader(
+                _subset_second_half(test_anomaly_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_medium_images_metrics = self.test_anomaly_medium_images[len(self.test_anomaly_medium_images)//2:]
 
-        self.test_anomaly_small_loader_metrics = DataLoader(
-            test_anomaly_small_ds[len(test_anomaly_small_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_anomaly_small_images_metrics = self.test_anomaly_small_images[len(self.test_anomaly_small_images)//2:]
-        
-        # masks
-        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
-        self.test_masks_medium_ds = CacheDataset(data=self.medium_group_masks, transform=masks_transforms)
-        self.test_masks_small_ds = CacheDataset(data=self.small_group_masks, transform=masks_transforms)
+            ## masks
+            self.test_masks_medium_ds = CacheDataset(data=self.medium_group_masks, transform=masks_transforms)
+            self.test_masks_medium_loader_select_params = DataLoader(
+                _subset_first_half(self.test_masks_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_masks_medium_loader_metrics = DataLoader(
+                _subset_second_half(self.test_masks_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
 
-        # large group
-        self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:len(self.test_masks_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[len(self.test_masks_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
+        if "small" in self.groups_to_load:
+            # small group
+            test_anomaly_small_ds = CacheDataset(data=self.test_anomaly_small_images, transform=test_anomaly_transforms)
+            self.test_anomaly_small_loader_select_params = DataLoader(
+                _subset_first_half(test_anomaly_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_small_images_select_params = self.test_anomaly_small_images[:len(self.test_anomaly_small_images)//2]
 
-        # medium group
-        self.test_masks_medium_loader_select_params = DataLoader(
-            self.test_masks_medium_ds[:len(self.test_masks_medium_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_masks_medium_loader_metrics = DataLoader(
-            self.test_masks_medium_ds[len(self.test_masks_medium_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
+            self.test_anomaly_small_loader_metrics = DataLoader(
+                _subset_second_half(test_anomaly_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_anomaly_small_images_metrics = self.test_anomaly_small_images[len(self.test_anomaly_small_images)//2:]
+            
+            ## masks
+            self.test_masks_small_ds = CacheDataset(data=self.small_group_masks, transform=masks_transforms)
+            self.test_masks_small_loader_select_params = DataLoader(
+                _subset_first_half(self.test_masks_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
+            self.test_masks_small_loader_metrics = DataLoader(
+                _subset_second_half(self.test_masks_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=self.pin_memory
+            )
 
-        # small group
-        self.test_masks_small_loader_select_params = DataLoader(
-            self.test_masks_small_ds[:len(self.test_masks_small_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
-        self.test_masks_small_loader_metrics = DataLoader(
-            self.test_masks_small_ds[len(self.test_masks_small_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
-        )
 
 
     def len_large_group(self):
+        if "large" not in self.groups_to_load:
+            dtprint("Large group not loaded. Returning 0.")
+            return 0
         return len(self.test_anomaly_large_images)
     
     def len_medium_group(self):
+        if "medium" not in self.groups_to_load:
+            dtprint("Medium group not loaded. Returning 0.")
+            return 0
         return len(self.test_anomaly_medium_images)
     
     def len_small_group(self):
+        if "small" not in self.groups_to_load:
+            dtprint("Small group not loaded. Returning 0.")
+            return 0
         return len(self.test_anomaly_small_images)
 
     def first(self):
-        return first(self.test_anomaly_large_loader_select_params)
+        if "large" in self.groups_to_load:
+            dtprint("Returning first sample from large group.")
+            return first(self.test_anomaly_large_loader_select_params)
+        elif "medium" in self.groups_to_load:
+            dtprint("Returning first sample from medium group.")
+            return first(self.test_anomaly_medium_loader_select_params)
+        elif "small" in self.groups_to_load:
+            dtprint("Returning first sample from small group.")
+            return first(self.test_anomaly_small_loader_select_params)
     
     def get_anomaly_loader_select_params(self, group):
         if group == "large":
@@ -233,6 +269,7 @@ class SOOP_large_only():
                  args,
                  batch_size=64,
                  num_workers=4,
+                 num_images_to_load=-1,
                 ):
         
         self.args = args
@@ -281,7 +318,9 @@ class SOOP_large_only():
         self.test_anomaly_large_images = sorted(self.test_anomaly_large_images, key=lambda x: os.path.basename(x).split('.')[0])
         self.large_group_masks = sorted(self.large_group_masks, key=lambda x: os.path.basename(x).split('.')[0])
 
-
+        if num_images_to_load > 0:
+            self.test_anomaly_large_images = self.test_anomaly_large_images[:num_images_to_load]
+            self.large_group_masks = self.large_group_masks[:num_images_to_load]
 
         # dataloaders
         # each group of images is split into two halves:
@@ -293,12 +332,12 @@ class SOOP_large_only():
         
         # large group
         self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:len(test_anomaly_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:len(self.test_anomaly_large_images)//2]
 
         self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[len(test_anomaly_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[len(self.test_anomaly_large_images)//2:]
 
@@ -307,10 +346,10 @@ class SOOP_large_only():
        
         # large group
         self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:len(self.test_masks_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[len(self.test_masks_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
 
@@ -412,13 +451,13 @@ class SOOP_Fast():
         
         # large group - select params (first 4)
         self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:4]
 
         # large group - metrics (last 4)
         self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 4, len(test_anomaly_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[4:]
         
@@ -426,10 +465,10 @@ class SOOP_Fast():
         self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
 
         self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 4, len(self.test_masks_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
     def len_large_group(self):
@@ -493,10 +532,10 @@ class SOOP_Fast_adc_flair():
         self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
 
         self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 4, len(self.test_masks_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         # ------------ ADC + FLAIR ------------
@@ -526,14 +565,14 @@ class SOOP_Fast_adc_flair():
         
         # large group - select params (first 4)
         self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_select_params_adc = self.test_anomaly_large_images_adc[:4]
         self.test_anomaly_large_images_select_params_flair = self.test_anomaly_large_images_flair[:4]
 
         # large group - metrics (last 4)
         self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 4, len(test_anomaly_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         self.test_anomaly_large_images_metrics_adc = self.test_anomaly_large_images_adc[:4]
@@ -604,10 +643,10 @@ class SOOP_Fast_adc_flair_t1w():
         self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
 
         self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(self.test_masks_large_ds, 4, len(self.test_masks_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         # ------------ ADC + FLAIR + T1w ------------
@@ -640,14 +679,14 @@ class SOOP_Fast_adc_flair_t1w():
         
         # large group - select params (first 4)
         self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:4], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 0, 4), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_select_params_adc = self.test_anomaly_large_images_adc[:4]
         self.test_anomaly_large_images_select_params_flair = self.test_anomaly_large_images_flair[:4]
         self.test_anomaly_large_images_select_params_t1w = self.test_anomaly_large_images_t1w[:4]
         # large group - metrics (last 4)
         self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[4:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_range(test_anomaly_large_ds, 4, len(test_anomaly_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         self.test_anomaly_large_images_metrics_adc = self.test_anomaly_large_images_adc[:4]
@@ -661,6 +700,216 @@ class SOOP_Fast_adc_flair_t1w():
 
     def first(self):
         return first(self.test_anomaly_large_loader_select_params)
+
+
+class SOOP_adc_flair_t1w():
+    def __init__(self,
+                 args,
+                 batch_size=64,
+                 num_workers=4,
+                ):
+
+        self.args = args
+        self.root_dir = args.root_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+        masks_transforms = monai.transforms.Compose(
+            [
+                monai.transforms.LoadImage(),
+                monai.transforms.EnsureChannelFirst(),
+                monai.transforms.ResizeWithPadOrCrop(spatial_size=(args.image_size, args.image_size, args.image_size)),
+                custom_transforms.SetBackgroundToZero()
+            ]
+        )
+
+        # Reuse the existing SOOP split logic (large / medium / small), then build multimodal triplets per group.
+        base_soop = SOOP(args, batch_size=batch_size, num_workers=num_workers)
+
+        adc_images = sorted(glob.glob(self.root_dir + "datasets/final_soop_dataset_small/adc_registered/*.nii.gz"))
+        flair_images = sorted(glob.glob(self.root_dir + "datasets/final_soop_dataset_small/flair_registered/*.nii.gz"))
+        t1w_images = sorted(glob.glob(self.root_dir + "datasets/final_soop_dataset_small/t1w_registered/*.nii.gz"))
+        masks_images = sorted(glob.glob(self.root_dir + "datasets/final_soop_dataset_small/masks_combined_registered/*.nii.gz"))
+
+        adc_by_id = {os.path.basename(path).split('.')[0]: path for path in adc_images}
+        flair_by_id = {os.path.basename(path).split('.')[0]: path for path in flair_images}
+        t1w_by_id = {os.path.basename(path).split('.')[0]: path for path in t1w_images}
+        masks_by_id = {os.path.basename(path).split('.')[0]: path for path in masks_images}
+
+        def build_group(group_paths):
+            group_ids = [os.path.basename(path).split('.')[0] for path in group_paths]
+            valid_ids = [
+                subject_id for subject_id in group_ids
+                if subject_id in adc_by_id and subject_id in flair_by_id and subject_id in t1w_by_id and subject_id in masks_by_id
+            ]
+
+            adc_group = [adc_by_id[subject_id] for subject_id in valid_ids]
+            flair_group = [flair_by_id[subject_id] for subject_id in valid_ids]
+            t1w_group = [t1w_by_id[subject_id] for subject_id in valid_ids]
+            masks_group = [masks_by_id[subject_id] for subject_id in valid_ids]
+
+            datalist_group = [
+                {"adc": adc_path, "flair": flair_path, "t1w": t1w_path}
+                for adc_path, flair_path, t1w_path in zip(adc_group, flair_group, t1w_group)
+            ]
+            return datalist_group, adc_group, flair_group, t1w_group, masks_group
+
+        (self.test_anomaly_large_images,
+         self.test_anomaly_large_images_adc,
+         self.test_anomaly_large_images_flair,
+         self.test_anomaly_large_images_t1w,
+         self.large_group_masks) = build_group(base_soop.test_anomaly_large_images)
+
+        (self.test_anomaly_medium_images,
+         self.test_anomaly_medium_images_adc,
+         self.test_anomaly_medium_images_flair,
+         self.test_anomaly_medium_images_t1w,
+         self.medium_group_masks) = build_group(base_soop.test_anomaly_medium_images)
+
+        (self.test_anomaly_small_images,
+         self.test_anomaly_small_images_adc,
+         self.test_anomaly_small_images_flair,
+         self.test_anomaly_small_images_t1w,
+         self.small_group_masks) = build_group(base_soop.test_anomaly_small_images)
+
+        transforms_def = define_instance(args, "val_transforms")
+        ano_transforms = monai.transforms.Compose([
+            *transforms_def.transforms,
+            monai.transforms.Lambda(func=lambda x: x["image"]),
+        ])
+
+        test_anomaly_large_ds = CacheDataset(data=self.test_anomaly_large_images, transform=ano_transforms)
+        test_anomaly_medium_ds = CacheDataset(data=self.test_anomaly_medium_images, transform=ano_transforms)
+        test_anomaly_small_ds = CacheDataset(data=self.test_anomaly_small_images, transform=ano_transforms)
+
+        self.test_masks_large_ds = CacheDataset(data=self.large_group_masks, transform=masks_transforms)
+        self.test_masks_medium_ds = CacheDataset(data=self.medium_group_masks, transform=masks_transforms)
+        self.test_masks_small_ds = CacheDataset(data=self.small_group_masks, transform=masks_transforms)
+
+        large_split = len(test_anomaly_large_ds) // 2
+        medium_split = len(test_anomaly_medium_ds) // 2
+        small_split = len(test_anomaly_small_ds) // 2
+
+        self.test_anomaly_large_loader_select_params = DataLoader(
+            _subset_range(test_anomaly_large_ds, 0, large_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_large_loader_metrics = DataLoader(
+            _subset_range(test_anomaly_large_ds, large_split, len(test_anomaly_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_anomaly_medium_loader_select_params = DataLoader(
+            _subset_range(test_anomaly_medium_ds, 0, medium_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_medium_loader_metrics = DataLoader(
+            _subset_range(test_anomaly_medium_ds, medium_split, len(test_anomaly_medium_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_anomaly_small_loader_select_params = DataLoader(
+            _subset_range(test_anomaly_small_ds, 0, small_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_anomaly_small_loader_metrics = DataLoader(
+            _subset_range(test_anomaly_small_ds, small_split, len(test_anomaly_small_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_masks_large_loader_select_params = DataLoader(
+            _subset_range(self.test_masks_large_ds, 0, large_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_large_loader_metrics = DataLoader(
+            _subset_range(self.test_masks_large_ds, large_split, len(self.test_masks_large_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_masks_medium_loader_select_params = DataLoader(
+            _subset_range(self.test_masks_medium_ds, 0, medium_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_medium_loader_metrics = DataLoader(
+            _subset_range(self.test_masks_medium_ds, medium_split, len(self.test_masks_medium_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_masks_small_loader_select_params = DataLoader(
+            _subset_range(self.test_masks_small_ds, 0, small_split), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+        self.test_masks_small_loader_metrics = DataLoader(
+            _subset_range(self.test_masks_small_ds, small_split, len(self.test_masks_small_ds)), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+        )
+
+        self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:large_split]
+        self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[large_split:]
+        self.test_anomaly_medium_images_select_params = self.test_anomaly_medium_images[:medium_split]
+        self.test_anomaly_medium_images_metrics = self.test_anomaly_medium_images[medium_split:]
+        self.test_anomaly_small_images_select_params = self.test_anomaly_small_images[:small_split]
+        self.test_anomaly_small_images_metrics = self.test_anomaly_small_images[small_split:]
+
+    def len_large_group(self):
+        return len(self.test_anomaly_large_images)
+
+    def len_medium_group(self):
+        return len(self.test_anomaly_medium_images)
+
+    def len_small_group(self):
+        return len(self.test_anomaly_small_images)
+
+    def first(self):
+        return first(self.test_anomaly_large_loader_select_params)
+
+    def get_anomaly_loader_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_select_params
+        elif group == "small":
+            return self.test_anomaly_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_anomaly_loader_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_loader_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_loader_metrics
+        elif group == "small":
+            return self.test_anomaly_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_masks_loader_select_params(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_select_params
+        elif group == "medium":
+            return self.test_masks_medium_loader_select_params
+        elif group == "small":
+            return self.test_masks_small_loader_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_masks_loader_metrics(self, group):
+        if group == "large":
+            return self.test_masks_large_loader_metrics
+        elif group == "medium":
+            return self.test_masks_medium_loader_metrics
+        elif group == "small":
+            return self.test_masks_small_loader_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_anomaly_images_select_params(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_select_params
+        elif group == "medium":
+            return self.test_anomaly_medium_images_select_params
+        elif group == "small":
+            return self.test_anomaly_small_images_select_params
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
+
+    def get_anomaly_images_metrics(self, group):
+        if group == "large":
+            return self.test_anomaly_large_images_metrics
+        elif group == "medium":
+            return self.test_anomaly_medium_images_metrics
+        elif group == "small":
+            return self.test_anomaly_small_images_metrics
+        else:
+            raise ValueError("Invalid group name. Must be 'large', 'medium', or 'small'.")
 
 class ISLES():
 
@@ -732,34 +981,34 @@ class ISLES():
         
         # large group
         self.test_anomaly_large_loader_select_params = DataLoader( 
-            test_anomaly_large_ds[:len(test_anomaly_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_select_params = self.test_anomaly_large_images[:len(self.test_anomaly_large_images)//2]
 
         self.test_anomaly_large_loader_metrics = DataLoader(       
-            test_anomaly_large_ds[len(test_anomaly_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(test_anomaly_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_large_images_metrics = self.test_anomaly_large_images[len(self.test_anomaly_large_images)//2:]
 
         # medium group
         self.test_anomaly_medium_loader_select_params = DataLoader(
-            test_anomaly_medium_ds[:len(test_anomaly_medium_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(test_anomaly_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_medium_images_select_params = self.test_anomaly_medium_images[:len(self.test_anomaly_medium_images)//2]
 
         self.test_anomaly_medium_loader_metrics = DataLoader(
-            test_anomaly_medium_ds[len(test_anomaly_medium_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(test_anomaly_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_medium_images_metrics = self.test_anomaly_medium_images[len(self.test_anomaly_medium_images)//2:]
 
         # small group
         self.test_anomaly_small_loader_select_params = DataLoader(
-            test_anomaly_small_ds[:len(test_anomaly_small_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(test_anomaly_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_small_images_select_params = self.test_anomaly_small_images[:len(self.test_anomaly_small_images)//2]
 
         self.test_anomaly_small_loader_metrics = DataLoader(
-            test_anomaly_small_ds[len(test_anomaly_small_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(test_anomaly_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_anomaly_small_images_metrics = self.test_anomaly_small_images[len(self.test_anomaly_small_images)//2:]
         
@@ -770,26 +1019,26 @@ class ISLES():
 
         # large group
         self.test_masks_large_loader_select_params = DataLoader(
-            self.test_masks_large_ds[:len(self.test_masks_large_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_large_loader_metrics = DataLoader(
-            self.test_masks_large_ds[len(self.test_masks_large_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(self.test_masks_large_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         # medium group
         self.test_masks_medium_loader_select_params = DataLoader(
-            self.test_masks_medium_ds[:len(self.test_masks_medium_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(self.test_masks_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_medium_loader_metrics = DataLoader(
-            self.test_masks_medium_ds[len(self.test_masks_medium_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(self.test_masks_medium_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
         # small group
         self.test_masks_small_loader_select_params = DataLoader(
-            self.test_masks_small_ds[:len(self.test_masks_small_ds)//2], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_first_half(self.test_masks_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
         self.test_masks_small_loader_metrics = DataLoader(
-            self.test_masks_small_ds[len(self.test_masks_small_ds)//2:], batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
+            _subset_second_half(self.test_masks_small_ds), batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True
         )
 
     def len_large_group(self):
@@ -912,22 +1161,22 @@ class BRATS():
         test_anomaly_ds = CacheDataset(data=test_anomaly_images, transform=test_anomaly_transforms)
 
         test_anomaly_loader_select_params = DataLoader( # the first 50% of the test data is used to select the best noise timestep value and best threshold.
-            test_anomaly_ds[:len(test_anomaly_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            _subset_first_half(test_anomaly_ds), batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
         test_anomaly_images_select_params = test_anomaly_images[:len(test_anomaly_ds)//2]
 
         test_anomaly_loader_metrics = DataLoader(       # The second 50% is used to compute the final IOU and DICE metrics with these best values.
-            test_anomaly_ds[len(test_anomaly_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            _subset_second_half(test_anomaly_ds), batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
         test_anomaly_images_metrics = test_anomaly_images[len(test_anomaly_ds)//2:]
 
-        test_masks_ds = CacheDataset(data=test_masks, transform=test_masks_transforms)
+        test_masks_ds = CacheDataset(data=test_masks, transform=masks_transforms)
         
         test_masks_loader_select_params = DataLoader( # the first 50% of the test data is used to select the best noise timestep value and best threshold.
-            test_masks_ds[:len(test_masks_ds)//2], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            _subset_first_half(test_masks_ds), batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
         test_masks_loader_metrics = DataLoader(       # The second 50% is used to compute the final IOU and DICE metrics with these best values.
-            test_masks_ds[len(test_masks_ds)//2:], batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+            _subset_second_half(test_masks_ds), batch_size=ano_batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
         )
     
         def first(self):

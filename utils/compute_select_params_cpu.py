@@ -134,6 +134,8 @@ def launch_compute_select_params_cpu(args):
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
+    nb_inferences = args.nb_inferences
+
     try:
         is_thor = args.thor["enable"]
     except:

@@ -118,3 +118,110 @@ def sample_thor(args, model, device, image, infer_scheduler, timesteps=100, retu
         return image, intermediates_mixed_images_visualize, intermediates_pseudo_anomaly_masks, intermediates_pseudo_anomaly_masks_processed
     else:
         return image, intermediates_pseudo_anomaly_masks_processed
+
+
+@torch.no_grad()
+def my_sample_ddim(
+    args,
+    model,
+    device,
+    image,
+    infer_scheduler,
+    timesteps,
+    ddim_steps=None,
+    eta=0.0,
+    return_intermediates=False,
+):
+    """
+    DDIM-style sampler starting from a noised input image at `timesteps`.
+
+    Args:
+        timesteps: max diffusion timestep used to corrupt input before denoising.
+        ddim_steps: number of reverse steps (<= timesteps). If None, uses full schedule.
+        eta: DDIM stochasticity parameter (0.0 => deterministic DDIM, >0 adds noise).
+    """
+    simplexObj = simplex.Simplex_CLASS()
+
+    if args.noise["type"] == "simplex":
+        noise = simplex_ddpm.generate_simplex_noise(
+            simplexObj, image.shape, normalize=args.noise["normalize"]
+        ).to(device)
+    if args.noise["type"] == "gaussian":
+        noise = torch.randn(image.shape).to(device)
+
+    if timesteps >= infer_scheduler.num_train_timesteps:
+        dtprint(timesteps, "is too high. Setting to", infer_scheduler.num_train_timesteps - 1)
+        timesteps = infer_scheduler.num_train_timesteps - 1
+
+    if timesteps <= 0:
+        return (image, []) if return_intermediates else image
+
+    timesteps_list = torch.Tensor([timesteps for _ in range(image.shape[0])]).to(image.device).long()
+    image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device)
+
+    if ddim_steps is None:
+        ddim_steps = timesteps
+    ddim_steps = max(1, min(int(ddim_steps), int(timesteps)))
+
+    # Build monotonically increasing DDIM schedule and then iterate in reverse.
+    ddim_schedule = np.linspace(0, timesteps, num=ddim_steps + 1, dtype=int)
+    ddim_schedule = np.unique(ddim_schedule)
+    if ddim_schedule[-1] != timesteps:
+        ddim_schedule = np.append(ddim_schedule, timesteps)
+
+    alphas_cumprod = infer_scheduler.alphas_cumprod.to(device=device, dtype=image.dtype)
+    clip_sample = getattr(infer_scheduler, "clip_sample", False)
+    clip_values = getattr(infer_scheduler, "clip_sample_values", (-1.0, 1.0))
+    prediction_type = str(getattr(infer_scheduler, "prediction_type", "epsilon")).lower()
+
+    intermediates = []
+    for idx in range(len(ddim_schedule) - 1, 0, -1):
+        t = int(ddim_schedule[idx])
+        prev_t = int(ddim_schedule[idx - 1])
+
+        model_output = model(image, timesteps=torch.Tensor((t,)).to(device), context=None)
+
+        alpha_t = alphas_cumprod[t]
+        alpha_prev = alphas_cumprod[prev_t] if prev_t >= 0 else torch.tensor(1.0, device=device, dtype=image.dtype)
+        beta_t = 1.0 - alpha_t
+
+        if prediction_type == "epsilon":
+            pred_x0 = (image - beta_t.sqrt() * model_output) / alpha_t.sqrt()
+            pred_eps = model_output
+        elif prediction_type == "sample":
+            pred_x0 = model_output
+            pred_eps = (image - alpha_t.sqrt() * pred_x0) / beta_t.sqrt()
+        elif prediction_type == "v_prediction":
+            pred_x0 = alpha_t.sqrt() * image - beta_t.sqrt() * model_output
+            pred_eps = alpha_t.sqrt() * model_output + beta_t.sqrt() * image
+        else:
+            # Fallback to epsilon prediction for unknown scheduler prediction types.
+            pred_x0 = (image - beta_t.sqrt() * model_output) / alpha_t.sqrt()
+            pred_eps = model_output
+
+        if clip_sample:
+            pred_x0 = torch.clamp(pred_x0, clip_values[0], clip_values[1])
+
+        # DDIM update (Eq. 12 in https://arxiv.org/abs/2010.02502)
+        sigma_t = eta * torch.sqrt(((1 - alpha_prev) / (1 - alpha_t)) * (1 - alpha_t / alpha_prev))
+        direction = torch.sqrt(torch.clamp(1 - alpha_prev - sigma_t**2, min=0.0)) * pred_eps
+
+        if eta > 0:
+            if args.noise["type"] == "simplex":
+                step_noise = simplex_ddpm.generate_simplex_noise(
+                    simplexObj, image.shape, normalize=args.noise["normalize"]
+                ).to(device)
+            else:
+                step_noise = torch.randn_like(image)
+        else:
+            step_noise = torch.zeros_like(image)
+
+        image = alpha_prev.sqrt() * pred_x0 + direction + sigma_t * step_noise
+
+        if return_intermediates:
+            intermediates.append(image)
+
+    if return_intermediates:
+        return image, intermediates
+    else:
+        return image

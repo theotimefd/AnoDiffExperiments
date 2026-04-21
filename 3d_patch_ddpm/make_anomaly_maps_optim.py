@@ -207,7 +207,15 @@ def _run_patchwise_test_optim(
     return stitched_pred
 
 
-def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False, no_abs_value=False):
+def make_anomaly_maps_optim(args, model, device, 
+                            infer_scheduler, 
+                            image_loader, 
+                            image_paths, 
+                            infer_timesteps, 
+                            output_folder, 
+                            replace_existing_files=False, 
+                            no_abs_value=False,
+                            nb_inferences=1):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
@@ -241,6 +249,8 @@ def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, 
 
     for i, image_batch in enumerate(image_loader):
 
+        dtprint(f"Processing batch {i+1}/{len(image_loader)}")
+
         test_images = image_batch.to(device)
 
         with torch.no_grad():
@@ -256,22 +266,28 @@ def make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, 
                     tprint(f"All reconstructed images at noise timesteps {infer_timesteps} already exist for current batch, skipping inference.")
                     continue
 
+                stitched_preds = []
+                
+                for inference_idx in range(nb_inferences):
+                    dtprint(f"inference {inference_idx+1}/{nb_inferences} for batch {i+1}/{len(image_loader)}")
 
-                
-                stitched_pred = _run_patchwise_test_optim(
-                    test_images,
-                    infer_patch_size,
-                    patch_overlap,
-                    patch_infer_batch_size,
-                    args.noise["type"],
-                    simplexObj,
-                    model,
-                    infer_scheduler,
-                    infer_timesteps,
-                    device,
-                )
-                
-                for idx, infered_volume in enumerate(stitched_pred):
+                    stitched_pred = _run_patchwise_test_optim(
+                        test_images,
+                        infer_patch_size,
+                        patch_overlap,
+                        patch_infer_batch_size,
+                        args.noise["type"],
+                        simplexObj,
+                        model,
+                        infer_scheduler,
+                        infer_timesteps,
+                        device,
+                    )
+                    stitched_preds.append(stitched_pred)
+
+                avrage_stitched_pred = torch.mean(torch.stack(stitched_preds, dim=0), dim=0)
+
+                for idx, infered_volume in enumerate(avrage_stitched_pred):
                     
                     normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
 

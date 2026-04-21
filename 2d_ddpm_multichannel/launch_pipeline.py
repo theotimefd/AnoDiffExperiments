@@ -4,8 +4,8 @@ import os
 import argparse
 import json
 from pathlib import Path
-from train_ddpm_full_volume import launch_train_full_volume
-#from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
+
+
 #from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 from utils.compute_select_params_cpu import launch_compute_select_params_cpu
 #from anomaly_detection_inference import launch_anomaly_detection_inference
@@ -50,16 +50,19 @@ def main():
         
 
         if step == "train_ddpm_full_volume":
+            from train_ddpm_full_volume import launch_train_full_volume
             dtprint(f"Launching ddpm full volume training: {config_dict['experiment_name']}/{config_dict['sub_experiment_name']} with {args.gpus} gpus")
             launch_train_full_volume(args)
         
         if step == "compute_metrics_reconstruction" and rank == 0:
+            from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
             dtprint("Launching compute_metrics_reconstruction")
-            #launch_compute_metrics_reconstruction(args)
+            launch_compute_metrics_reconstruction(args)
         
         if step=="compute_metrics_anomaly_detection" and rank==0:
+            from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
             dtprint("Launching compute_metrics_anomaly_detection")
-            #launch_compute_metrics_anomaly_detection(args)
+            launch_compute_metrics_anomaly_detection(args)
         
         if step=="compute_select_params_cpu" and rank==0:
             dtprint("Launching compute_select_params_cpu")

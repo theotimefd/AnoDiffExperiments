@@ -1,11 +1,10 @@
-import os
+"""
+This file only works for 3D slice by slice inference.
+"""
 
+import os
 import sys
 
-from pathlib import Path
-
-from datasets import anomaly_datasets
-from utils.compute_select_params_cpu import launch_compute_select_params_cpu
 sys.path.append("../..")
 #import opensimplex
 
@@ -13,138 +12,252 @@ sys.path.append("../..")
 
 import matplotlib.pyplot as plt
 import numpy as np
-import csv
 import torch
-
 from monai.utils import set_determinism
 from torch.amp import autocast
 from tqdm import tqdm
-
-
 import nibabel as nib
+from scipy import stats
 
 from monai.networks.schedulers import DDPMScheduler
 
 
-
 import pandas as pd
 
-import AnoDDPM.simplex as simplex
+from utils.compute_select_params_cpu import launch_compute_select_params_cpu
+
+
 import utils.simplex_ddpm as simplex_ddpm
 import utils.scores as scores
 
 from utils.utils import *
-from make_anomaly_maps_optim import make_anomaly_maps_optim, _run_patchwise_test_optim
-
-
+from sample import my_sample, sample_thor
+from make_anomaly_maps import make_anomaly_maps
+from datasets import anomaly_datasets
 
 from scipy.ndimage import median_filter, binary_erosion, binary_dilation, binary_fill_holes
 
 
-def scale_intensity_from_histogram_peak(input_image, target_value=1.0):
-    # to be used only on mri images with intensities between 0 and 1
-    input_np = input_image.cpu().numpy()
-
-    hist, bin_edges = np.histogram(input_np.flatten(), bins=100, range=(np.max(input_np)/15.0, 0.8))
-
-    peak_value = bin_edges[np.argmax(hist)]
-
-    normalized_image = input_image / peak_value * target_value
-
-    return normalized_image
+DEVICE_TYPE = "cuda:0"
 
 
-@torch.no_grad()
-def my_sample(model, device, noise_type, simplexObj, image, infer_scheduler, timesteps, return_intermediates=False):
-
-    if noise_type == "simplex":
-        noise = simplex_ddpm.generate_simplex_noise(simplexObj, image.shape, normalize=False).to(device)
-    if noise_type == "gaussian":
-        noise = torch.randn(image.shape).to(device)
-
-
-    timesteps_list = torch.Tensor([timesteps for a in range(image.shape[0])]).to(image.device).long()
-
-    image = infer_scheduler.add_noise(image, noise, timesteps_list).to(device) #TODO
-
-
-    intermediates = []
-    intermediates_step = 20
-
-            
-    for t in tqdm(range(timesteps, 0, -1)): # va de timesteps à 0
-        
-        model_output = model(
-            image, timesteps=torch.Tensor((t,)).to(device), context=None
-        )
-        #print(model_output.shape)
-        
-        image, _ = infer_scheduler.step(model_output, t, image)
+def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, 
+                    infer_scheduler, 
+                    image_loader, 
+                    image_paths, 
+                    mask_loader, 
+                    timesteps, 
+                    threshold, 
+                    median_filter_size, 
+                    erosion_dilation_iterations, 
+                    binary_fill_holes_param, 
+                    no_abs_value=False):
+    """
+    !! Here the images have multiple channels !!
+    input:
+        image_loader: DataLoader for the anomaly images
+        mask_loader: DataLoader for the anomaly masks
+        timesteps: number of noise timesteps to use for inference
+        threshold: threshold to use for anomaly segmentation
+        median_filter_size: size of the median filter to apply to the anomaly map, use -1 or None to not apply any filtering
+        erosion_iterations: number of erosion iterations to apply to the anomaly segmentation, use 0 to not apply any erosion
+        dilation_iterations: number of dilation iterations to apply to the anomaly segmentation, use 0 to not apply any dilation
+        binary_fill_holes_param: whether to apply binary fill holes to the anomaly segmentation, use 0 to not apply it, 1 to apply it
+    output:
+        final_scores: a dictionary containing the mean and confidence intervals for each metric, with the following format:
+        {
+            "iou": [mean_iou, lower_iou, upper_iou],
+            "dice": [mean_dice, lower_dice, upper_dice],
+            "hausdorff": [mean_hausdorff, lower_hausdorff, upper_hausdorff],
+            "precision": [mean_precision, lower_precision, upper_precision],
+            "recall": [mean_recall, lower_recall, upper_recall],
+            "f1": [mean_f1, lower_f1, upper_f1]
+        }
+    """
     
-        if (t== timesteps-1 or t%intermediates_step == 0) and return_intermediates:
-            intermediates.append(image)
+    iou_scores = []
+    dice_scores = []
+    hausdorff_distances = []
+    precision_scores = []
+    recall_scores = []
+    f1_scores = []
 
-    if return_intermediates:
-        return image, intermediates
-    else:
-        return image
+    basic_affine = nib.load(image_paths[0]).affine
 
+    no_masks = False
+    if mask_loader is None:
+        mask_loader = image_loader # hack so the for loop works
+        no_masks = True
+
+    #for every batch
+    for i,(image_batch, mask_batch) in tqdm(enumerate(zip(image_loader, mask_loader))): 
+
+        test_images = image_batch.to(device)
+        test_masks = mask_batch.to(device)
+        test_masks[test_masks>0.5] = 1.0
+        test_masks[test_masks<=0.5] = 0.0
+
+
+        with autocast(device_type=DEVICE_TYPE, enabled=True):
+            
+            infered_slices = []
+
+            # infer slice by slice
+            for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
+                if args.thor["enable"]:
+                    _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
+                else:
+                    infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                
+                infered_slices.append(infered_slice.unsqueeze(-1))
+
+            # stack the slices back to a 3D volume
+            average_infered_image = torch.cat(infered_slices, dim=-1)
+            for batch_idx in range(average_infered_image.shape[0]):
+                for channel_idx in range(average_infered_image.shape[1]):
+                    average_infered_image[batch_idx, channel_idx] = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image[batch_idx, channel_idx], 2.0/7.0), 0.0, 1.0)
+            
+
+            # make the anomaly map (difference between infered and original)
+            final_anomaly_map = torch.zeros_like(test_images)
+            if no_abs_value:
+                final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end]
+            else:
+                final_anomaly_map[...,args.slice_indexes_start:args.slice_indexes_end] = torch.abs(average_infered_image - test_images[...,args.slice_indexes_start:args.slice_indexes_end])
+
+            # save the unprocessed anomaly maps if specified
+            if args.dataset["save_anomaly_maps"]:
+                for idx_in_batch in range(final_anomaly_map.shape[0]):
+                    image_id = i*test_images.shape[0] + idx_in_batch
+                    image_name = os.path.basename(image_paths[image_id])
+                    nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"{image_name}")
+
+
+
+            # apply median filter if specified
+            if median_filter_size is not None and median_filter_size > 0:
+                final_anomaly_map_np = final_anomaly_map.cpu().numpy()
+                for b in range(final_anomaly_map_np.shape[0]):
+                    for c in range(final_anomaly_map_np.shape[1]):
+                        final_anomaly_map_np[b, c] = median_filter(final_anomaly_map_np[b, c], size=median_filter_size)
+                final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
+            
+            
+        #tprint(f"unprocessed anomaly map shape: {final_anomaly_map.shape}")
+        if no_abs_value:
+            continue
+        if not no_masks:
+
+            # make the segmentation map with threshold
+            ano_segmentation = final_anomaly_map > threshold
+
+            # perform erosion if specified
+            if erosion_dilation_iterations > 0:
+                ano_segmentation_np = ano_segmentation.cpu().numpy()
+                for b in range(ano_segmentation_np.shape[0]):
+                    for c in range(ano_segmentation_np.shape[1]):
+                        ano_segmentation_np[b,c] = binary_erosion(ano_segmentation_np[b,c], iterations=erosion_dilation_iterations)
+                        ano_segmentation_np[b,c] = binary_dilation(ano_segmentation_np[b,c], iterations=erosion_dilation_iterations)
+                ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+            
+            if binary_fill_holes_param == 1:
+
+                ano_segmentation_np = ano_segmentation.cpu().numpy()
+
+                for b in range(ano_segmentation_np.shape[0]):
+                    for c in range(ano_segmentation_np.shape[1]):
+                        ano_segmentation_np[b,c] = binary_fill_holes(ano_segmentation_np[b,c])
+
+                ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
+
+            iou_scores_batch, dice_scores_batch, hausdorff_distances_batch, precision_scores_batch, recall_scores_batch, f1_scores_batch = scores.compute_scores(ano_segmentation, test_masks)
+    
+            # put all the batch score lists into one big list
+            iou_scores.append(iou_scores_batch)
+            dice_scores.append(dice_scores_batch)
+            hausdorff_distances.append(hausdorff_distances_batch)
+            precision_scores.append(precision_scores_batch)
+            recall_scores.append(recall_scores_batch)
+            f1_scores.append(f1_scores_batch)
+    
+    if no_abs_value:
+        return {}
+    if no_masks:
+        return {}
+
+    # Flatten nested lists before converting to numpy array
+    flat_iou = [item for sublist in iou_scores for item in sublist]
+    flat_dice = [item for sublist in dice_scores for item in sublist]
+    flat_hausdorff = [item for sublist in hausdorff_distances for item in sublist]
+    flat_precision = [item for sublist in precision_scores for item in sublist]
+    flat_recall = [item for sublist in recall_scores for item in sublist]
+    flat_f1 = [item for sublist in f1_scores for item in sublist]
+
+    
+    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(flat_iou))
+    
+    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(flat_dice))
+
+    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(flat_hausdorff))
+
+    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(flat_precision))
+
+    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(flat_recall))
+    
+    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(flat_f1))
+
+    final_scores = {
+        "iou": [round(mean_iou, 4), round(lower_iou, 4), round(upper_iou, 4)],
+        "dice": [round(mean_dice, 4), round(lower_dice, 4), round(upper_dice, 4)],
+        "hausdorff": [round(mean_hausdorff, 4), round(lower_hausdorff, 4), round(upper_hausdorff, 4)],
+        "precision": [round(mean_precision, 4), round(lower_precision, 4), round(upper_precision, 4)],
+        "recall": [round(mean_recall, 4), round(lower_recall, 4), round(upper_recall, 4)],
+        "f1": [round(mean_f1, 4), round(lower_f1, 4), round(upper_f1, 4)]
+    }
+
+    return final_scores
 
 
 def show_summary_figure(args, device, model, infer_scheduler, 
                         image_loader, 
                         mask_loader, 
-                        infer_timesteps, 
+                        timesteps, 
                         median_filter_size, 
                         threshold, 
                         erosion_dilation_iterations, 
-                        binary_fill_holes_param,
+                        binary_fill_holes_param, 
                         metrics_result_text, 
                         ROOT_DIR, 
                         EXPERIMENT_NAME, 
                         SUB_EXPERIMENT_NAME):
 
     
-    if args.noise["type"] == "simplex":
-        simplexObj = simplex.Simplex_CLASS()
-
-
     for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
         if i>0:break
 
-        test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device) # list of 2d images
-        test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device) # list of 2d images
+        if args.spatial_dims_val_test == 2:
+            test_anomaly_images = image_batch.to(device)
+            test_anomaly_masks = mask_batch.to(device)
+        elif args.spatial_dims_val_test == 3:
+            test_anomaly_images = image_batch[..., image_batch.shape[-1]//2].to(device)
+            test_anomaly_masks = mask_batch[..., mask_batch.shape[-1]//2].to(device)
         
         test_anomaly_masks[test_anomaly_masks>0.5] = 1.0
         test_anomaly_masks[test_anomaly_masks<=0.5] = 0.0
 
-        final_anomaly_maps = torch.zeros_like(test_anomaly_images) # list of 2d images
-        infered_maps = torch.zeros_like(test_anomaly_images) # list of 2d images
+        with autocast(device_type=DEVICE_TYPE, enabled=True):
 
-        with torch.no_grad():
-            with autocast(device_type="cuda", enabled=True):
-
-                stitched_pred = _run_patchwise_test_optim(
-                    image_batch.to(device),
-                    args.patch_size,
-                    args.dataset["patch_overlap"],
-                    args.dataset["patch_batch_size"],
-                    args.noise["type"],
-                    simplexObj,
-                    model,
-                    infer_scheduler,
-                    infer_timesteps,
-                    device,
-                )
-
-                for idx, infered_volume in enumerate(stitched_pred):
-                    
-                    normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
-                    infered_maps[idx] = normalized_infered_volume[..., normalized_infered_volume.shape[-1]//2]
-                    # make the anomaly map (difference between infered and original)
-                    final_anomaly_map = torch.abs(normalized_infered_volume.to(device) - image_batch[idx].to(device))
-                    final_anomaly_maps[idx] = final_anomaly_map[..., final_anomaly_map.shape[-1]//2]
-                    
+            # Perform 3 inferences and average the results
+            
+            if args.thor["enable"]:
+                _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                infered_image = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
+            else:
+                infered_image = my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+            
+            infered_image = torch.clamp(scale_intensity_from_histogram_peak(infered_image, 2.0/7.0), 0.0, 1.0)
+        
         
 
     # ----------- PLOT -----------
@@ -167,19 +280,19 @@ def show_summary_figure(args, device, model, infer_scheduler,
         
 
         # 3x average inferred images
-        #print(infered_image.shape)
-        infered_image_slice = infered_maps[idx, 0].cpu().numpy()
+        #print(average_infered_image.shape)
+        infered_image_cpu = infered_image[idx, 0].cpu().numpy()
         
-        axes[1, idx*2].imshow(infered_image_slice, cmap='gray', vmin=0, vmax=1)
+        axes[1, idx*2].imshow(infered_image_cpu, cmap='gray', vmin=0, vmax=1)
         axes[1, idx*2].set_title(f'Inferred {idx+1}')
         axes[1, idx*2].axis('off')
 
-        axes[1, idx*2+1].hist(infered_image_slice[infered_image_slice>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
+        axes[1, idx*2+1].hist(infered_image_cpu[infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
         axes[1, idx*2+1].set_ylim(0, 2000)
         axes[1, idx*2+1].set_aspect('auto') # Set the aspect ratio to auto to match the imshow plot
 
         # Difference images
-        difference_image = final_anomaly_maps[idx, 0].cpu().numpy()
+        difference_image = np.abs(original_image - infered_image_cpu)
         # apply median filter if specified
         if median_filter_size is not None and median_filter_size > 0:
             final_anomaly_map_np = difference_image
@@ -233,189 +346,22 @@ def show_summary_figure(args, device, model, infer_scheduler,
     for idx in range(8):
         axes[5, idx].axis('off')
     # Add overall title with metric results
-
-    plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, LDM 3D volumes", fontsize=16)
+    if args.spatial_dims_val_test == 2:
+        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, single 2D slice", fontsize=16)
+    elif args.spatial_dims_val_test == 3:
+        plt.suptitle(f"Anomaly detection for {EXPERIMENT_NAME}, full slice by slice volume inference, large group", fontsize=16)
 
     plt.figtext(0.0, 0.0, metrics_result_text, fontsize=14)
 
-
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_patch_ddpm_3d_volumes.png", transparent=False, dpi=150)
-
-
-def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, 
-                    infer_scheduler, 
-                    image_loader, 
-                    image_paths, 
-                    mask_loader, 
-                    timesteps, 
-                    threshold, 
-                    median_filter_size, 
-                    erosion_dilation_iterations, 
-                    binary_fill_holes_param, 
-                    no_abs_value=False):
-    """
-    input:
-        image_loader: DataLoader for the anomaly images
-        mask_loader: DataLoader for the anomaly masks
-        timesteps: number of noise timesteps to use for inference
-        threshold: threshold to use for anomaly segmentation
-        median_filter_size: size of the median filter to apply to the anomaly map, use -1 or None to not apply any filtering
-        erosion_iterations: number of erosion iterations to apply to the anomaly segmentation, use 0 to not apply any erosion
-        dilation_iterations: number of dilation iterations to apply to the anomaly segmentation, use 0 to not apply any dilation
-    output:
-            final_scores: a dictionary containing the mean and confidence intervals for each metric, with the following format:
-            {
-                "iou": [mean_iou, lower_iou, upper_iou],
-                "dice": [mean_dice, lower_dice, upper_dice],
-                "hausdorff": [mean_hausdorff, lower_hausdorff, upper_hausdorff],
-                "precision": [mean_precision, lower_precision, upper_precision],
-                "recall": [mean_recall, lower_recall, upper_recall],
-                "f1": [mean_f1, lower_f1, upper_f1]
-            }
-    """
-    
-    iou_scores = []
-    dice_scores = []
-    hausdorff_distances = []
-    precision_scores = []
-    recall_scores = []
-    f1_scores = []
-
-    no_masks = False
-    if mask_loader is None:
-        mask_loader = image_loader # hack so the for loop works
-        no_masks = True
-
-    
-    simplexObj = None
-
-    if args.noise["type"] == "simplex":
-        simplexObj = simplex.Simplex_CLASS()
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], 
-                                                            schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], 
-                                                            persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
-
-    elif args.noise["type"] == "gaussian":
-        infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
-
-    # first we save all the anomaly maps
-    # then we compute the metrics on them
-
-    # for every batch
-
-    make_anomaly_maps_optim(args, model, device, infer_scheduler, image_loader, image_paths, timesteps, ANOMALY_MAPS_DIR, no_abs_value=no_abs_value)
-
-    if no_abs_value:
-        return {}
-
-    if not no_masks:
-
-        # make the segmentation map with threshold
-
-        for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))):
-
-            test_images = image_batch.to(device)
-            test_masks = mask_batch.to(device)
-            test_masks[test_masks>0.5] = 1.0
-            test_masks[test_masks<=0.5] = 0.0
-            
-            infered_batch = torch.zeros_like(image_batch)
-
-            volumes = test_images.shape[0]
-
-            # load infered images from saved files
-            for idx in range(volumes): 
-
-                image_id = i*test_images.shape[0] + idx
-                patient_id = os.path.basename(image_paths[image_id]).replace(".nii.gz", "")
-                
-                reconstructed_map_path = ANOMALY_MAPS_DIR+f"{patient_id}_t_{timesteps}.nii.gz"
-                
-                # Load the reconstructed NIfTI file
-                reconstructed_nifti = nib.load(reconstructed_map_path)
-                reconstructed_data = reconstructed_nifti.get_fdata()
-
-                # Convert to torch tensor and assign to infered_batch
-                infered_batch[idx : idx + 1] = torch.from_numpy(reconstructed_data).unsqueeze(0).unsqueeze(0).to(device).float()
-
-            # apply median filter if specified
-            if median_filter_size is not None and median_filter_size > 0:
-                final_anomaly_map_np = infered_batch.cpu().numpy()
-                for b in range(final_anomaly_map_np.shape[0]):
-                    final_anomaly_map_np[b] = median_filter(final_anomaly_map_np[b], size=median_filter_size)
-                final_anomaly_map = torch.from_numpy(final_anomaly_map_np).to(device)
-            else:
-                final_anomaly_map = infered_batch
-
-            ano_segmentation = final_anomaly_map > threshold
-
-            # perform erosion if specified
-            if erosion_dilation_iterations > 0:
-                ano_segmentation_np = ano_segmentation.cpu().numpy()
-                for b in range(ano_segmentation_np.shape[0]):
-                    ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=erosion_dilation_iterations)
-                    ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=erosion_dilation_iterations)
-                ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
-            
-            if binary_fill_holes_param == 1:
-                ano_segmentation_np = ano_segmentation.cpu().numpy()
-                for b in range(ano_segmentation_np.shape[0]):
-                    ano_segmentation_np[b,0] = binary_fill_holes(ano_segmentation_np[b,0])
-                ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
-
-            iou_scores_batch, dice_scores_batch, hausdorff_distances_batch, precision_scores_batch, recall_scores_batch, f1_scores_batch = scores.compute_scores(ano_segmentation, test_masks)
-
-            # put all the batch score lists into one big list
-            iou_scores.append(iou_scores_batch)
-            dice_scores.append(dice_scores_batch)
-            hausdorff_distances.append(hausdorff_distances_batch)
-            precision_scores.append(precision_scores_batch)
-            recall_scores.append(recall_scores_batch)
-            f1_scores.append(f1_scores_batch)
-
-    if no_masks:
-        return {}
-
-    
-    # Flatten nested lists before converting to numpy array
-    flat_iou = [item for sublist in iou_scores for item in sublist]
-    flat_dice = [item for sublist in dice_scores for item in sublist]
-    flat_hausdorff = [item for sublist in hausdorff_distances for item in sublist]
-    flat_precision = [item for sublist in precision_scores for item in sublist]
-    flat_recall = [item for sublist in recall_scores for item in sublist]
-    flat_f1 = [item for sublist in f1_scores for item in sublist]
-
-    mean_iou, lower_iou, upper_iou = scores.make_confidence_intervals(np.array(flat_iou))
-    
-    mean_dice, lower_dice, upper_dice = scores.make_confidence_intervals(np.array(flat_dice))
-
-    mean_hausdorff, lower_hausdorff, upper_hausdorff = scores.make_confidence_intervals(np.array(flat_hausdorff))
-
-    mean_precision, lower_precision, upper_precision = scores.make_confidence_intervals(np.array(flat_precision))
-
-    mean_recall, lower_recall, upper_recall = scores.make_confidence_intervals(np.array(flat_recall))
-    
-    mean_f1, lower_f1, upper_f1 = scores.make_confidence_intervals(np.array(flat_f1))
-
-
-    final_scores = {
-        "iou": [round(mean_iou, 4), round(lower_iou, 4), round(upper_iou, 4)],
-        "dice": [round(mean_dice, 4), round(lower_dice, 4), round(upper_dice, 4)],
-        "hausdorff": [round(mean_hausdorff, 4), round(lower_hausdorff, 4), round(upper_hausdorff, 4)],
-        "precision": [round(mean_precision, 4), round(lower_precision, 4), round(upper_precision, 4)],
-        "recall": [round(mean_recall, 4), round(lower_recall, 4), round(upper_recall, 4)],
-        "f1": [round(mean_f1, 4), round(lower_f1, 4), round(upper_f1, 4)]
-    }
-
-    return final_scores
+    if args.spatial_dims_val_test == 2:
+        plt.savefig(f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_single_slice.png", transparent=False, dpi=150)
+    if args.spatial_dims_val_test == 3:
+        plt.savefig(f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_{args.dataset['test']}_metrics_anomaly_detection_full_volume_slice_by_slice.png", transparent=False, dpi=150)
 
 
 def launch_compute_metrics_anomaly_detection(args):
-    """
-    Computes reconstruction metrics on the test_reconstruction set and visualize some results
-    """
-
-
+    # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
+    # The second 50% is used to compute the final IOU and DICE metrics with these best values.
     DEVICE_TYPE = "cuda:0"
     device = torch.device(DEVICE_TYPE)
 
@@ -427,16 +373,20 @@ def launch_compute_metrics_anomaly_detection(args):
 
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
-    MODELS_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/"
-    SUB_EXPERIMENT_DIR = ROOT_DIR+f"AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
-    ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    SUB_EXPERIMENT_DIR = f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
+    
+    if args.thor["enable"] == False:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
+    else:
+        ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params_thor/"
+        ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_thor/" # final anomaly maps with best params
+
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
 
-    IMAGE_SIZE = args.image_size
 
-    model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
+    model_path = f"{args.root_dir}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
 
     torch.backends.cudnn.benchmark = True
     torch.set_num_threads(torch.get_num_threads())
@@ -455,22 +405,33 @@ def launch_compute_metrics_anomaly_detection(args):
     plt.rcParams['xtick.color'] = TEXTCOLOR
     plt.rcParams['ytick.color'] = TEXTCOLOR
 
+
+
+
     # -------------------- define the data --------------------
 
     if args.dataset["test"] == "brats":
-        ano_dataset = anomaly_datasets.BRATS(args)
+        print("not implemented with multichannel MRI")
 
     if args.dataset["test"] == "isles":
-        ano_dataset = anomaly_datasets.ISLES(args)
+        print("not implemented with multichannel MRI")
     
     if args.dataset["test"] == "soop":
-        ano_dataset = anomaly_datasets.SOOP(args)
+        ano_dataset = anomaly_datasets.SOOP_adc_flair_t1w(args)
     
     if args.dataset["test"] == "soop_fast":
-        ano_dataset = anomaly_datasets.SOOP_Fast(args)
+        ano_dataset = anomaly_datasets.SOOP_Fast_adc_flair_t1w(args)
 
     
-    
+
+    if args.noise["type"] == "simplex":
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
+
+    elif args.noise["type"] == "gaussian":
+        infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
+
+    num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
+
 
 
     model = define_instance(args, "network_def").to(device)
@@ -480,15 +441,11 @@ def launch_compute_metrics_anomaly_detection(args):
 
 
     if args.noise["type"] == "simplex":
-        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], 
-                                                            schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], 
-                                                            persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
+        infer_scheduler = simplex_ddpm.SimplexDDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"], octaves=args.noise["simplex_octaves"], persistence=args.noise["simplex_persistence"], frequency=args.noise["simplex_frequency"], normalize=args.noise["normalize"])
 
     elif args.noise["type"] == "gaussian":
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
-
-    num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
 
     if args.dataset["test"] == "brats":
         # Compute the raw anomaly maps and save them as nifti files
@@ -500,14 +457,14 @@ def launch_compute_metrics_anomaly_detection(args):
         if not os.path.exists(best_params_csv_path):
             dtprint("Generating raw anomaly maps for different timesteps...")
             for timesteps in num_timesteps_to_try:
-                make_anomaly_maps_optim(args, model, device, infer_scheduler, ano_dataset.test_anomaly_loader_select_params, ano_dataset.test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+                make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_loader_select_params, ano_dataset.test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
             dtprint(f"Computing best parameters with CPU...")
             launch_compute_select_params_cpu(args)
         else:
             dtprint(f"Best parameters already computed: {best_params_csv_path}")        
 
-        # Check if the final mterics have already been computed
+        # Check if the final metrics have already been computed
         metrics_csv_path = SUB_EXPERIMENT_DIR + f"metrics_{args.dataset['test']}.csv"
 
         if not os.path.exists(metrics_csv_path):
@@ -564,7 +521,7 @@ def launch_compute_metrics_anomaly_detection(args):
                                 infer_scheduler, 
                                 ano_dataset.test_anomaly_large_loader_metrics, 
                                 ano_dataset.test_masks_large_loader_metrics, 
-                                infer_timesteps=best_num_timesteps, 
+                                timesteps=best_num_timesteps, 
                                 median_filter_size=best_median_filter_size, 
                                 threshold=best_threshold, 
                                 erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -594,7 +551,7 @@ def launch_compute_metrics_anomaly_detection(args):
                 os.makedirs(ANOMALY_MAPS_DIR+f"{group}/", exist_ok=True)
                 
                 for timesteps in num_timesteps_to_try:
-                    make_anomaly_maps_optim(args, model, device, infer_scheduler, ano_dataset.get_anomaly_loader_select_params(group), ano_dataset.get_anomaly_images_select_params(group), timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+group+"/")
+                    make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.get_anomaly_loader_select_params(group), ano_dataset.get_anomaly_images_select_params(group), timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+group+"/")
                 
                 dtprint(f"Computing best parameters with CPU...")
                 launch_compute_select_params_cpu(args)
@@ -656,7 +613,7 @@ def launch_compute_metrics_anomaly_detection(args):
                                     infer_scheduler, 
                                     ano_dataset.get_anomaly_loader_metrics(group), 
                                     ano_dataset.get_masks_loader_metrics(group), 
-                                    infer_timesteps=best_num_timesteps, 
+                                    timesteps=best_num_timesteps, 
                                     median_filter_size=best_median_filter_size, 
                                     threshold=best_threshold, 
                                     erosion_dilation_iterations=best_erosion_dilation_iterations,
@@ -682,7 +639,7 @@ def launch_compute_metrics_anomaly_detection(args):
         if not os.path.exists(best_params_csv_path):
         
             for timesteps in num_timesteps_to_try:
-                make_anomaly_maps_optim(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params_small, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+                make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_large_loader_select_params_small, ano_dataset.test_anomaly_large_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
 
 
             dtprint(f"Computing best parameters with CPU...")
@@ -744,7 +701,7 @@ def launch_compute_metrics_anomaly_detection(args):
                                     infer_scheduler, 
                                     ano_dataset.test_anomaly_large_loader_metrics_small, 
                                     ano_dataset.test_masks_large_loader_metrics_small, 
-                                    infer_timesteps=best_num_timesteps, 
+                                    timesteps=best_num_timesteps, 
                                     median_filter_size=best_median_filter_size, 
                                     threshold=best_threshold, 
                                     erosion_dilation_iterations=best_erosion_dilation_iterations,

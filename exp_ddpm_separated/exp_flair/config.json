@@ -1,14 +1,14 @@
 {
-    "experiment_name": "experiment_3",
-    "sub_experiment_name": "exp_3_2",
-    "description": "2D DDPM on flair with simplex noise, validation on whole volume",
-    "pipeline": ["anomaly_detection_inference_20x"],
+    "experiment_name": "exp_ddpm_separated",
+    "sub_experiment_name": "exp_flair",
+    "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
+    "pipeline": ["train_ddpm_full_volume"],
     "spatial_dims": 2,
     "spatial_dims_val_test": 3,
     "image_size": 128,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
-        "name": "final_flair_dataset_small_added_oasis",
+        "name": "final_adc_dataset_small_dallas_only",
         "test": "soop",
         "save_anomaly_maps":true,
         "batch_size": 16,
@@ -103,6 +103,9 @@
     "diffusion_train": {
         "max_epochs": 6000,
         "val_interval": 10,
+        "resume_checkpoint": false,
+        "last_checkpoint_epoch":4800,
+        "last_best_val_loss":0.4019,
         "optimizer": {
             "type": "Adam",
             "lr": 1.4e-5
@@ -118,7 +121,7 @@
     "anomaly_detection_param_search":{
         "median_filter_sizes": [-1, 5, 7, 10],
         "thresholds": [0.02, 0.04, 0.06, 0.08],
-        "erosion_dilation_iterations": [0, 1, 2, 4, 6],
+        "erosion_dilation_iterations": [0, 2, 4, 6, 8],
         "binary_fill_holes": [0, 1]
     }
 }

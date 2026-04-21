@@ -188,7 +188,23 @@ def _run_patchwise_test(
 
     return stitched_pred
 
-def process_volume(idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files):
+def process_volume(idx, 
+                   test_images, 
+                   image_paths, 
+                   i, 
+                   infer_patch_size, 
+                   patch_overlap, 
+                   patch_infer_batch_size, 
+                   args, 
+                   simplexObj, 
+                   model, 
+                   infer_scheduler, 
+                   infer_timesteps, 
+                   device, 
+                   output_folder, 
+                   basic_affine, 
+                   replace_existing_files,
+                   nb_inferences=1):
 
     image_id = i*test_images.shape[0] + idx
     image_name = os.path.basename(image_paths[image_id])
@@ -201,22 +217,29 @@ def process_volume(idx, test_images, image_paths, i, infer_patch_size, patch_ove
     volume = test_images[idx : idx + 1] #TODO Here it does it volume per volume, any way to run the inference by batch?
     volume = volume.to(device)
     
-    stitched_pred = _run_patchwise_test(
-        volume,
-        infer_patch_size,
-        patch_overlap,
-        patch_infer_batch_size,
-        args.noise["type"],
-        simplexObj,
-        model,
-        infer_scheduler,
-        infer_timesteps,
-        device,
-    )
-    infered = torch.clamp(scale_intensity_from_histogram_peak(stitched_pred, 2.0/7.0), 0.0, 1.0)
+    stitched_preds = []
+
+    for inference_idx in range(nb_inferences):
+
+        stitched_pred = _run_patchwise_test(
+            volume,
+            infer_patch_size,
+            patch_overlap,
+            patch_infer_batch_size,
+            args.noise["type"],
+            simplexObj,
+            model,
+            infer_scheduler,
+            infer_timesteps,
+            device,
+        )
+        stitched_preds.append(stitched_pred)
+
+    average_infered_image = torch.mean(torch.stack(stitched_preds, dim=0), dim=0)
+    average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
 
     # make the anomaly map (difference between infered and original)
-    final_anomaly_map = torch.abs(infered - volume)
+    final_anomaly_map = torch.abs(average_infered_image - volume)
     
     #if the output file doesn't exist already
     if not os.path.exists(output_path):
@@ -224,7 +247,14 @@ def process_volume(idx, test_images, image_paths, i, infer_patch_size, patch_ove
     elif replace_existing_files:
         nib.save(nib.Nifti1Image(final_anomaly_map.squeeze().cpu().numpy(), basic_affine), output_path)
 
-def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_paths, infer_timesteps, output_folder, replace_existing_files=False):
+def make_anomaly_maps(args, model, device, 
+                      infer_scheduler, 
+                      image_loader, 
+                      image_paths, 
+                      infer_timesteps, 
+                      output_folder, 
+                      replace_existing_files=False,
+                      nb_inferences=1):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
@@ -267,14 +297,13 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
 
                 tprint(f"making anomaly maps for batch {i+1}/{len(image_loader)} with {volumes} volumes at noise timesteps {infer_timesteps}")
 
-                  
 
                 # use multiprocessing to process two volumes in parallel
                 # Set spawn method for CUDA compatibility
                 mp.set_start_method('spawn', force=True)
                 num_processes = 4
                 with ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context('spawn')) as executor:
-                    futures = [executor.submit(process_volume, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files) for idx in range(volumes)]
+                    futures = [executor.submit(process_volume, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files, nb_inferences) for idx in range(volumes)]
                     for future in as_completed(futures):
                         future.result()  # To raise exceptions if any
                     

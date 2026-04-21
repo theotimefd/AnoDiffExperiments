@@ -63,11 +63,10 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
     ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" 
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" # final anomaly maps with best params
     dtprint(f"Anomaly maps best params will be saved in {ANOMALY_MAPS_DIR_SELECT_PARAMS}")
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)
-
 
 
     model_path = f"{args.root_dir}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/models/{SUB_EXPERIMENT_NAME}_best_model.pth"
@@ -98,7 +97,21 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
             custom_transforms.SetBackgroundToZero()
         ]
     )
+    
 
+    # -------------------- define the data --------------------
+
+    if args.dataset["test"] == "brats":
+        ano_dataset = anomaly_datasets.BRATS(args)
+
+    if args.dataset["test"] == "isles":
+        ano_dataset = anomaly_datasets.ISLES(args)
+    
+    if args.dataset["test"] == "soop":
+        ano_dataset = anomaly_datasets.SOOP(args)
+    
+    if args.dataset["test"] == "soop_fast":
+        ano_dataset = anomaly_datasets.SOOP_Fast(args)
     
 
     if args.noise["type"] == "simplex":
@@ -125,65 +138,24 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     # ------------------------ SOOP dataset ------------------------ #
     if args.dataset["test"] == "soop":
         
-        
+        # --------------------------------- large group
         if "flair" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 150
-            best_num_timesteps_medium_group = 110
-            best_num_timesteps_small_group = 150
+            best_num_timesteps_large_group = 90
 
         elif "adc" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 90
-            best_num_timesteps_medium_group = 70
-            best_num_timesteps_small_group = 50
+            best_num_timesteps_large_group = 110
         
-        group = "small"
-
-        ano_dataset = anomaly_datasets.SOOP(args, groups_to_load=[group])
-
-
-        dtprint(f"going for inference {group} group")
 
         if no_abs_value:
-            output_folder = f"{ANOMALY_MAPS_DIR}{group}_no_abs_value/"
+            output_folder = ANOMALY_MAPS_DIR+"large_no_abs_value_20x_inference/"
             os.makedirs(output_folder, exist_ok=True)
 
         else:
-            output_folder = f"{ANOMALY_MAPS_DIR}{group}/"
-            os.makedirs(output_folder)
+            output_folder = ANOMALY_MAPS_DIR+"large_20x_inference/"
+            os.makedirs(output_folder, exist_ok=True)
         
-        dtprint(f"saving anomaly maps in {output_folder}")
+        make_anomaly_maps_optim(args, model, device, infer_scheduler=infer_scheduler, image_loader=ano_dataset.test_anomaly_large_loader_metrics, image_paths=ano_dataset.test_anomaly_large_images_metrics, infer_timesteps=best_num_timesteps_large_group, output_folder=output_folder, replace_existing_files=False, no_abs_value=no_abs_value, nb_inferences=20)
         
-        if group == "large":
-            make_anomaly_maps_optim(args, model, device, 
-                                    infer_scheduler=infer_scheduler, 
-                                    image_loader=ano_dataset.test_anomaly_large_loader_metrics, 
-                                    image_paths=ano_dataset.test_anomaly_large_images_metrics, 
-                                    infer_timesteps=best_num_timesteps_large_group, 
-                                    output_folder=output_folder, 
-                                    replace_existing_files=False, 
-                                    no_abs_value=no_abs_value)
-        elif group == "medium":
-            make_anomaly_maps_optim(args, model, device, 
-                                    infer_scheduler=infer_scheduler, 
-                                    image_loader=ano_dataset.test_anomaly_medium_loader_metrics, 
-                                    image_paths=ano_dataset.test_anomaly_medium_images_metrics, 
-                                    infer_timesteps=best_num_timesteps_medium_group, 
-                                    output_folder=output_folder, 
-                                    replace_existing_files=False, 
-                                    no_abs_value=no_abs_value)
-        
-        elif group == "small":
-            make_anomaly_maps_optim(args, model, device, 
-                                    infer_scheduler=infer_scheduler, 
-                                    image_loader=ano_dataset.test_anomaly_small_loader_metrics, 
-                                    image_paths=ano_dataset.test_anomaly_small_images_metrics, 
-                                    infer_timesteps=best_num_timesteps_small_group, 
-                                    output_folder=output_folder, 
-                                    replace_existing_files=False, 
-                                    no_abs_value=no_abs_value)
-        
-        
-        #tprint(metrics_result_text)
     
     if args.dataset["test"] == "healthy_test_set":
 

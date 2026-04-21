@@ -51,7 +51,8 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
                     median_filter_size, 
                     erosion_dilation_iterations, 
                     binary_fill_holes_param, 
-                    no_abs_value=False):
+                    no_abs_value=False,
+                    ):
     """
     input:
         image_loader: DataLoader for the anomaly images
@@ -74,6 +75,8 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
         }
     """
     
+    nb_inferences = args.nb_inferences
+
     iou_scores = []
     dice_scores = []
     hausdorff_distances = []
@@ -96,24 +99,36 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
         test_masks[test_masks>0.5] = 1.0
         test_masks[test_masks<=0.5] = 0.0
 
+        dtprint(f"Batch {i+1}/{len(image_loader)}")
+
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
             
-            infered_slices = []
 
-            # infer slice by slice
-            for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
-                if args.thor["enable"]:
-                    _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
-                    infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-                else:
-                    infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+            infered_images = []
+
+            for inference_idx in range(nb_inferences):
+                infered_slices = []
+
+                dtprint(f"Inference {inference_idx+1}/{nb_inferences} for batch {i+1}/{len(image_loader)}...")
                 
-                infered_slices.append(infered_slice.unsqueeze(-1))
+                # infer slice by slice
+                for slice_idx in range(args.slice_indexes_start, args.slice_indexes_end):
+                    if args.thor["enable"]:
+                        _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                        infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
+                    else:
+                        infered_slice = my_sample(args, model, device, test_images[...,slice_idx], infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    
+                    infered_slices.append(infered_slice.unsqueeze(-1))
+
+                infered_images.append(torch.cat(infered_slices, dim=-1))
 
             # stack the slices back to a 3D volume
-            average_infered_image = torch.cat(infered_slices, dim=-1)
-            average_infered_image = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image, 2.0/7.0), 0.0, 1.0)
+            average_infered_image = torch.mean(torch.stack(infered_images), dim=0)
+            for b in range(average_infered_image.shape[0]):
+                average_infered_image[b] = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image[b], 2.0/7.0), 0.0, 1.0)
+            
 
             # make the anomaly map (difference between infered and original)
             final_anomaly_map = torch.zeros_like(test_images)
@@ -221,7 +236,8 @@ def show_summary_figure(args, device, model, infer_scheduler,
                         metrics_result_text, 
                         ROOT_DIR, 
                         EXPERIMENT_NAME, 
-                        SUB_EXPERIMENT_NAME):
+                        SUB_EXPERIMENT_NAME,
+                        nb_inferences=1):
 
     
     for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
@@ -239,15 +255,23 @@ def show_summary_figure(args, device, model, infer_scheduler,
 
         with autocast(device_type=DEVICE_TYPE, enabled=True):
 
-            # Perform 3 inferences and average the results
             
-            if args.thor["enable"]:
-                _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
-                infered_image = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
-            else:
-                infered_image = my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
             
-            infered_image = torch.clamp(scale_intensity_from_histogram_peak(infered_image, 2.0/7.0), 0.0, 1.0)
+            infered_images = []
+            for inference_idx in range(nb_inferences):
+                    
+                if args.thor["enable"]:
+                    _, pseudo_anomaly_masks_processed = sample_thor(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+                    infered_slice = stats.hmean(np.stack([p.cpu() for p in pseudo_anomaly_masks_processed]), axis=0)
+                else:
+                    infered_slice = my_sample(args, model, device, test_anomaly_images, infer_scheduler, timesteps=timesteps, return_intermediates=False)
+            
+                infered_images.append(infered_slice)
+            infered_image = torch.mean(torch.stack(infered_images), dim=0)
+            
+            for b in range(infered_image.shape[0]):
+                infered_image[b] = torch.clamp(scale_intensity_from_histogram_peak(infered_image[b], 2.0/7.0), 0.0, 1.0)
+            
         
         
 
@@ -269,13 +293,11 @@ def show_summary_figure(args, device, model, infer_scheduler,
         axes[0, idx*2+1].set_aspect('auto')  # Set the aspect ratio to auto to match the imshow plot
         
         
-
-        # 3x average inferred images
         #print(average_infered_image.shape)
         infered_image_cpu = infered_image[idx, 0].cpu().numpy()
         
         axes[1, idx*2].imshow(infered_image_cpu, cmap='gray', vmin=0, vmax=1)
-        axes[1, idx*2].set_title(f'Inferred {idx+1}')
+        axes[1, idx*2].set_title(f'Inferred {idx+1} {nb_inferences} inferences, timesteps: {timesteps}')
         axes[1, idx*2].axis('off')
 
         axes[1, idx*2+1].hist(infered_image_cpu[infered_image_cpu>0.01].flatten(), bins=50, color='blue', alpha=0.7, range=(0.0, 1.0))
@@ -362,6 +384,8 @@ def launch_compute_metrics_anomaly_detection(args):
 
     ROOT_DIR = args.root_dir
 
+    nb_inferences = args.nb_inferences
+
     EXPERIMENT_NAME = args.experiment_name
     SUB_EXPERIMENT_NAME = args.sub_experiment_name
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
@@ -396,23 +420,6 @@ def launch_compute_metrics_anomaly_detection(args):
     plt.rcParams['xtick.color'] = TEXTCOLOR
     plt.rcParams['ytick.color'] = TEXTCOLOR
 
-
-
-
-    # -------------------- define the data --------------------
-
-    if args.dataset["test"] == "brats":
-        ano_dataset = anomaly_datasets.BRATS(args)
-
-    if args.dataset["test"] == "isles":
-        ano_dataset = anomaly_datasets.ISLES(args)
-    
-    if args.dataset["test"] == "soop":
-        ano_dataset = anomaly_datasets.SOOP(args)
-    
-    if args.dataset["test"] == "soop_fast":
-        ano_dataset = anomaly_datasets.SOOP_Fast(args)
-
     
 
     if args.noise["type"] == "simplex":
@@ -422,8 +429,6 @@ def launch_compute_metrics_anomaly_detection(args):
         infer_scheduler = DDPMScheduler(num_train_timesteps=args.noise["num_timesteps_full_noise"], schedule=args.noise["schedule"])
 
     num_timesteps_to_try = np.arange(NOISE_MIN, NOISE_MAX, NOISE_INTERVAL)
-
-
 
     model = define_instance(args, "network_def").to(device)
 
@@ -445,10 +450,19 @@ def launch_compute_metrics_anomaly_detection(args):
         # Check if select best params has already been done
         best_params_csv_path = SUB_EXPERIMENT_DIR+"best_params_brats.csv"
 
+        ano_dataset = anomaly_datasets.BRATS(args)
+
         if not os.path.exists(best_params_csv_path):
             dtprint("Generating raw anomaly maps for different timesteps...")
             for timesteps in num_timesteps_to_try:
-                make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.test_anomaly_loader_select_params, ano_dataset.test_anomaly_images_select_params, timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS)
+                make_anomaly_maps(args, model, device, 
+                                  infer_scheduler, 
+                                  ano_dataset.test_anomaly_loader_select_params, 
+                                  ano_dataset.test_anomaly_images_select_params, 
+                                  timesteps, 
+                                  ANOMALY_MAPS_DIR_SELECT_PARAMS,
+                                  replace_existing_files=False,
+                                  )
 
             dtprint(f"Computing best parameters with CPU...")
             launch_compute_select_params_cpu(args)
@@ -529,8 +543,14 @@ def launch_compute_metrics_anomaly_detection(args):
         
         groups = ["large", "medium", "small"] # the groups of anomalies based on their size, large is the easiest and small is the hardest
 
+        if args.dataset["test"] == "isles":
+            ano_dataset = anomaly_datasets.ISLES(args)
+
         for group in groups:
             
+            if args.dataset["test"] == "soop":
+                ano_dataset = anomaly_datasets.SOOP(args, batch_size=32, num_workers=4, groups_to_load=[group], pin_memory=True)
+
             dtprint(f"{group} group")
 
             # Check if select best params has already been done
@@ -541,8 +561,17 @@ def launch_compute_metrics_anomaly_detection(args):
                 dtprint("Generating raw anomaly maps for different timesteps...")
                 os.makedirs(ANOMALY_MAPS_DIR+f"{group}/", exist_ok=True)
                 
-                for timesteps in num_timesteps_to_try:
-                    make_anomaly_maps(args, model, device, infer_scheduler, ano_dataset.get_anomaly_loader_select_params(group), ano_dataset.get_anomaly_images_select_params(group), timesteps, ANOMALY_MAPS_DIR_SELECT_PARAMS+group+"/")
+                #for timesteps in num_timesteps_to_try:
+                #for timesteps in num_timesteps_to_try[::-1]: #TODO 
+                for timesteps in [args.timestep_to_try]:
+                    #dtprint(f"I am going through the timesteps in reverse order, change this behavior at line {sys._getframe().f_lineno} if you want to go in normal order")
+                    # start from the highest number of timesteps, to have the best chance of having the best params already computed when we start the compute_select_params_cpu part, since it starts with the highest number of timesteps
+                    make_anomaly_maps(args, model, device, 
+                                      infer_scheduler, 
+                                      ano_dataset.get_anomaly_loader_select_params(group), 
+                                      ano_dataset.get_anomaly_images_select_params(group), 
+                                      timesteps, 
+                                      ANOMALY_MAPS_DIR_SELECT_PARAMS+group+"/")
                 
                 dtprint(f"Computing best parameters with CPU...")
                 launch_compute_select_params_cpu(args)
@@ -624,6 +653,8 @@ def launch_compute_metrics_anomaly_detection(args):
         # --------------------------------- large group
         dtprint("Large group")
         dtprint("Generating raw anomaly maps for different timesteps...")
+
+        ano_dataset = anomaly_datasets.SOOP_Fast(args)
 
         best_params_csv_path = SUB_EXPERIMENT_DIR+f"best_params_{args.dataset['test']}.csv"
         
