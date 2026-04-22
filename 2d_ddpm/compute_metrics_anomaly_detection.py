@@ -41,6 +41,8 @@ from scipy.ndimage import median_filter, binary_erosion, binary_dilation, binary
 DEVICE_TYPE = "cuda:0"
 
 
+
+
 def compute_metrics(args, model, device, ANOMALY_MAPS_DIR, 
                     infer_scheduler, 
                     image_loader, 
@@ -126,6 +128,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
 
             # stack the slices back to a 3D volume
             average_infered_image = torch.mean(torch.stack(infered_images), dim=0)
+
             for b in range(average_infered_image.shape[0]):
                 average_infered_image[b] = torch.clamp(scale_intensity_from_histogram_peak(average_infered_image[b], 2.0/7.0), 0.0, 1.0)
             
@@ -140,7 +143,7 @@ def compute_metrics(args, model, device, ANOMALY_MAPS_DIR,
             # save the unprocessed anomaly maps if specified
             if args.dataset["save_anomaly_maps"]:
                 for idx_in_batch in range(final_anomaly_map.shape[0]):
-                    image_id = i*test_images.shape[0] + idx_in_batch
+                    image_id = i*image_loader.batch_size + idx_in_batch
                     image_name = os.path.basename(image_paths[image_id])
                     nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"{image_name}")
 

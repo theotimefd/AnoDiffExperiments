@@ -63,7 +63,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
     SUB_EXPERIMENT_DIR = f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/"
     
     ANOMALY_MAPS_DIR_SELECT_PARAMS = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}_select_params/"
-    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/" 
+    ANOMALY_MAPS_DIR = ROOT_DIR+f"datasets/anomaly_maps/{SUB_EXPERIMENT_NAME}/for_combine_experiment/" 
     dtprint(f"Anomaly maps best params will be saved in {ANOMALY_MAPS_DIR_SELECT_PARAMS}")
     os.makedirs(ANOMALY_MAPS_DIR_SELECT_PARAMS, exist_ok=True)
     os.makedirs(ANOMALY_MAPS_DIR, exist_ok=True)

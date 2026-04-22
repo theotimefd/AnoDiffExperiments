@@ -365,10 +365,12 @@ def launch_compute_metrics_reconstruction(args):
     fig, axes = plt.subplots(6, 8, figsize=(25, 25), constrained_layout=True)
     plt.tight_layout()
 
-    for idx in range(min(4, test_reconstruction_images.shape[0])):
-        channel_names = ['ADC', 'FLAIR', 'T1W']
+    for ch in range(min(3, test_reconstruction_images.shape[1])):
 
-        for ch in range(min(3, test_reconstruction_images.shape[1])):
+        for idx in range(min(4, test_reconstruction_images.shape[0])):
+            channel_names = ['ADC', 'FLAIR', 'T1W']
+
+            
             # Original test_reconstruction images
             original_image = test_reconstruction_images[idx, ch].cpu().numpy()
             axes[0, idx*2].imshow(original_image, cmap='gray', vmin=0, vmax=1)
@@ -455,90 +457,90 @@ def launch_compute_metrics_reconstruction(args):
                 color='grey', fontsize=12, verticalalignment='center'
             ) """
 
-    # Add overall title with metric results
-    plt.suptitle(f"Healthy reconstruction for {EXPERIMENT_NAME}", fontsize=16)
+        # Add overall title with metric results
+        plt.suptitle(f"Healthy reconstruction for {EXPERIMENT_NAME}", fontsize=16)
 
 
-    for ax in axes[4, 0:2]: # two merge two subplots
-        ax.remove()
-    gs = axes[4, 0].get_gridspec()
-    axbig1 = fig.add_subplot(gs[4, 0:2])
+        for ax in axes[4, 0:2]: # two merge two subplots
+            ax.remove()
+        gs = axes[4, 0].get_gridspec()
+        axbig1 = fig.add_subplot(gs[4, 0:2])
 
-    # PSNR plot with error bars
-    axbig1.errorbar(
-        [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
-        [np.mean(psnr[noise]) for noise in NOISE_RANGE],
-        yerr=[np.std(psnr[noise]) for noise in NOISE_RANGE],
-        marker='o', label='PSNR', color='blue', capsize=4
-    )
-    axbig1.set_title('Peak Signal-to-Noise Ratio (PSNR) ↑')
-    axbig1.set_xlabel('Noise Timesteps')
-    axbig1.set_ylabel('PSNR')
-    axbig1.grid(True)
-    axbig1.legend()
+        # PSNR plot with error bars
+        axbig1.errorbar(
+            [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
+            [np.mean(psnr[noise]) for noise in NOISE_RANGE],
+            yerr=[np.std(psnr[noise]) for noise in NOISE_RANGE],
+            marker='o', label='PSNR', color='blue', capsize=4
+        )
+        axbig1.set_title('Peak Signal-to-Noise Ratio (PSNR) ↑')
+        axbig1.set_xlabel('Noise Timesteps')
+        axbig1.set_ylabel('PSNR')
+        axbig1.grid(True)
+        axbig1.legend()
 
-    for ax in axes[4, 2:4]:
-        ax.remove()
-    gs = axes[4, 4].get_gridspec()
-    axbig2 = fig.add_subplot(gs[4, 2:4])
-
-
-    # SSIM plot
-    axbig2.errorbar(
-        [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
-        [np.mean(ssim[noise]) for noise in NOISE_RANGE],
-        yerr=[np.std(ssim[noise]) for noise in NOISE_RANGE],
-        marker='o', label='SSIM', color='blue', capsize=4
-    )
-    axbig2.set_title('Structural Similarity Index Metric (SSIM) ↑')
-    axbig2.set_xlabel('Noise rate')
-    axbig2.set_ylabel('SSIM')
-    axbig2.grid(True)
-    axbig2.legend()
-
-    for ax in axes[4, 4:6]:
-        ax.remove()
-    gs = axes[4, 2].get_gridspec()
-    axbig3 = fig.add_subplot(gs[4, 4:6])
-
-    # MSE plot
-    axbig3.errorbar(
-        [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
-        [np.mean(mse[noise]) for noise in NOISE_RANGE],
-        yerr=[np.std(mse[noise]) for noise in NOISE_RANGE],
-        marker='o', label='MSE', color='blue', capsize=4
-    )
-    axbig3.set_title('Mean Squared Error (MSE) ↓')
-    axbig3.set_xlabel('Noise rate')
-    axbig3.set_ylabel('MSE')
-    axbig3.grid(True)
-    axbig3.legend()
-
-    for ax in axes[4, 6:8]:
-        ax.remove()
-    gs = axes[4, 2].get_gridspec()
-    axbig4 = fig.add_subplot(gs[4, 6:8])
-
-    # LPIPS plot
-    axbig4.errorbar(
-        [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
-        [np.mean(lpips_dict[noise]) for noise in NOISE_RANGE],
-        yerr=[np.std(lpips_dict[noise]) for noise in NOISE_RANGE],
-        marker='o', label='LPIPS', color='blue', capsize=4
-    )
-    axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS) ↓')
-    axbig4.set_xlabel('Noise rate')
-    axbig4.set_ylabel('LPIPS')
-    axbig4.grid(True)
-    axbig4.legend()
-
-    # Add an empty row to create more whitespace for the figtext
-    for idx in range(8):
-        axes[5, idx].axis('off')
+        for ax in axes[4, 2:4]:
+            ax.remove()
+        gs = axes[4, 4].get_gridspec()
+        axbig2 = fig.add_subplot(gs[4, 2:4])
 
 
-    plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.noise['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+        # SSIM plot
+        axbig2.errorbar(
+            [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
+            [np.mean(ssim[noise]) for noise in NOISE_RANGE],
+            yerr=[np.std(ssim[noise]) for noise in NOISE_RANGE],
+            marker='o', label='SSIM', color='blue', capsize=4
+        )
+        axbig2.set_title('Structural Similarity Index Metric (SSIM) ↑')
+        axbig2.set_xlabel('Noise rate')
+        axbig2.set_ylabel('SSIM')
+        axbig2.grid(True)
+        axbig2.legend()
+
+        for ax in axes[4, 4:6]:
+            ax.remove()
+        gs = axes[4, 2].get_gridspec()
+        axbig3 = fig.add_subplot(gs[4, 4:6])
+
+        # MSE plot
+        axbig3.errorbar(
+            [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
+            [np.mean(mse[noise]) for noise in NOISE_RANGE],
+            yerr=[np.std(mse[noise]) for noise in NOISE_RANGE],
+            marker='o', label='MSE', color='blue', capsize=4
+        )
+        axbig3.set_title('Mean Squared Error (MSE) ↓')
+        axbig3.set_xlabel('Noise rate')
+        axbig3.set_ylabel('MSE')
+        axbig3.grid(True)
+        axbig3.legend()
+
+        for ax in axes[4, 6:8]:
+            ax.remove()
+        gs = axes[4, 2].get_gridspec()
+        axbig4 = fig.add_subplot(gs[4, 6:8])
+
+        # LPIPS plot
+        axbig4.errorbar(
+            [noise/args.noise["num_timesteps_full_noise"] for noise in NOISE_RANGE],
+            [np.mean(lpips_dict[noise]) for noise in NOISE_RANGE],
+            yerr=[np.std(lpips_dict[noise]) for noise in NOISE_RANGE],
+            marker='o', label='LPIPS', color='blue', capsize=4
+        )
+        axbig4.set_title('Learned Perceptual Image Patch Similarity (LPIPS) ↓')
+        axbig4.set_xlabel('Noise rate')
+        axbig4.set_ylabel('LPIPS')
+        axbig4.grid(True)
+        axbig4.legend()
+
+        # Add an empty row to create more whitespace for the figtext
+        for idx in range(8):
+            axes[5, idx].axis('off')
 
 
-    plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction.png", transparent=False, dpi=150)
+        plt.figtext(0.04, 0.04, f"Reconstruction metrics for the whole test_reconstruction dataset (std error bars)\nFor {args.noise['noise_rate_max']*100}% noise:\nPSNR: {np.mean(psnr[NOISE_RANGE[-1]]):.2f} ± {np.std(psnr[NOISE_RANGE[-1]]):.2f}\nSSIM: {np.mean(ssim[NOISE_RANGE[-1]]):.4f} ± {np.std(ssim[NOISE_RANGE[-1]]):.4f}\nMSE: {np.mean(mse[NOISE_RANGE[-1]]):.4f} ± {np.std(mse[NOISE_RANGE[-1]]):.4f}\nLPIPS: {np.mean(lpips_dict[NOISE_RANGE[-1]]):.4f} ± {np.std(lpips_dict[NOISE_RANGE[-1]]):.4f}", fontsize=16)
+
+
+        plt.savefig(f"{ROOT_DIR}/AnoDiffExperiments/{EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}/{SUB_EXPERIMENT_NAME}_metrics_reconstruction{channel_names[ch]}.png", transparent=False, dpi=150)
 

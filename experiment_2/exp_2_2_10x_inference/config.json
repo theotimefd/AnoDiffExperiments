@@ -1,0 +1,128 @@
+{
+    "experiment_name": "experiment_2",
+    "sub_experiment_name": "exp_2_2_10x_inference",
+    "description": "2D DDPM on adc with gaussian noise, validation on whole volume",
+    "pipeline": ["compute_metrics_anomaly_detection"],
+    "spatial_dims": 2,
+    "spatial_dims_val_test": 3,
+    "image_size": 128,
+    "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
+    "nb_inferences": 10,
+    "dataset":{
+        "name": "final_adc_dataset_small_added_ixi",
+        "test": "soop",
+        "save_anomaly_maps":true,
+        "batch_size": 16,
+        "num_workers": 16,
+        "slice_indexes_start":22,
+        "slice_indexes_end": 94
+    },
+    "show_summary_figures": true,
+    "slice_indexes_start":22,
+    "slice_indexes_end": 94,
+    "train_transforms": {
+        "_target_": "monai.transforms.Compose",
+        "transforms": [
+        {
+            "_target_": "monai.transforms.LoadImage", "image_only": true
+        },
+        {
+            "_target_": "monai.transforms.EnsureChannelFirst"
+        },
+        {
+            "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
+        },
+        {
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
+        },
+        {
+            "_target_": "utils.custom_transforms.Get2DSliceFromIndexes", "axis": 2, "indexes_start": "@slice_indexes_start", "indexes_end": "@slice_indexes_end"
+        },
+        {
+            "_target_": "monai.transforms.RandScaleCrop", "roi_scale":0.9, "max_roi_scale":1.1, "random_size":true
+        },
+        {
+            "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size"]
+        },
+        {
+            "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
+        },
+        {
+            "_target_": "monai.transforms.RandFlip", "prob": 0.5, "spatial_axis": 0
+        },
+        {
+            "_target_": "utils.custom_transforms.SetBackgroundToZero"
+        }]
+    },
+    "val_transforms": {
+        "_target_": "monai.transforms.Compose",
+        "transforms": [
+            {
+                "_target_": "monai.transforms.LoadImage", "image_only": true
+            },
+            {
+                "_target_": "monai.transforms.EnsureChannelFirst"
+            },
+            {
+                "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
+            },
+            {
+                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
+            },
+            {
+                "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
+            },
+            {
+                "_target_": "utils.custom_transforms.SetBackgroundToZero"
+            }
+        ]
+    },
+    "noise": {
+        "type": "simplex",
+        "schedule":"cosine",
+        "simplex_octaves":6, 
+        "simplex_persistence":0.8, 
+        "simplex_frequency":64,
+        "normalize": false,
+        "num_timesteps_full_noise": 1000,
+        "noise_rate_train_and_infer": 0.35,
+        "noise_rate_min": 0.05,
+        "noise_rate_max": 0.25,
+        "noise_timesteps_interval": 20,
+        "noise_rate_visualize":0.25
+    },
+    "network_def": {
+        "_target_": "monai.networks.nets.DiffusionModelUNet",
+        "spatial_dims": "@spatial_dims",
+        "in_channels": 1,
+        "out_channels": 1,
+        "channels":[32, 64, 64, 64],
+        "attention_levels":[false, true, true, true],
+        "num_head_channels":8,
+        "use_flash_attention":true
+    },
+    "diffusion_train": {
+        "max_epochs": 6000,
+        "val_interval": 10,
+        "resume_checkpoint": false,
+        "last_checkpoint_epoch":4800,
+        "last_best_val_loss":0.4019,
+        "optimizer": {
+            "type": "Adam",
+            "lr": 1.4e-5
+        },
+        "lr_scheduler": "none",
+        "lr_scheduler_milestones": [1000],
+        "ema":false
+    },
+    "thor": {
+        "enable": false,
+        "nb_timesteps_harmonization": 7
+    },
+    "anomaly_detection_param_search":{
+        "median_filter_sizes": [-1, 5, 7, 10],
+        "thresholds": [0.02, 0.04, 0.06, 0.08],
+        "erosion_dilation_iterations": [0, 2, 4, 6, 8],
+        "binary_fill_holes": [0, 1]
+    }
+}

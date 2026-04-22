@@ -188,7 +188,7 @@ def _run_patchwise_test(
 
     return stitched_pred
 
-def process_volume(idx, 
+def process_volume(batch_size, idx, 
                    test_images, 
                    image_paths, 
                    i, 
@@ -303,7 +303,7 @@ def make_anomaly_maps(args, model, device,
                 mp.set_start_method('spawn', force=True)
                 num_processes = 4
                 with ProcessPoolExecutor(max_workers=num_processes, mp_context=mp.get_context('spawn')) as executor:
-                    futures = [executor.submit(process_volume, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files, nb_inferences) for idx in range(volumes)]
+                    futures = [executor.submit(process_volume, image_loader.batch_size, idx, test_images, image_paths, i, infer_patch_size, patch_overlap, patch_infer_batch_size, args, simplexObj, model, infer_scheduler, infer_timesteps, device, output_folder, basic_affine, replace_existing_files, nb_inferences) for idx in range(volumes)]
                     for future in as_completed(futures):
                         future.result()  # To raise exceptions if any
                     

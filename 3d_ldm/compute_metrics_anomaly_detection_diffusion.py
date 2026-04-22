@@ -147,7 +147,7 @@ def compute_metrics(args, autoencoder, unet, device, ANOMALY_MAPS_DIR,
                 # save the anomaly maps if specified
                 if args.dataset["save_anomaly_maps"]:
                     for idx_in_batch in range(final_anomaly_map.shape[0]):
-                        image_id = i*test_images.shape[0] + idx_in_batch
+                        image_id = i*image_loader.batch_size + idx_in_batch
                         image_name = os.path.basename(image_paths[image_id])
                         nib.save(nib.Nifti1Image(final_anomaly_map[idx_in_batch].squeeze().cpu().numpy(), basic_affine), ANOMALY_MAPS_DIR+f"{image_name}")
 

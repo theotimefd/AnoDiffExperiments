@@ -49,7 +49,7 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
 
             # save the images
             for idx_in_batch in range(final_anomaly_map.shape[0]):
-                image_id = i*test_images.shape[0] + idx_in_batch
+                image_id = i*image_loader.batch_size + idx_in_batch
                 image_name = os.path.basename(image_paths[image_id])
                 output_path = output_folder+f"{image_name.split('.')[0]}_t_{timesteps}.nii.gz"
                 #if the output file doesn't exist already
@@ -63,7 +63,7 @@ def make_anomaly_maps(args, model, device, infer_scheduler, image_loader, image_
         else:
             
             for idx_in_batch in range(test_images.shape[0]):
-                image_id = i*test_images.shape[0] + idx_in_batch
+                image_id = i*image_loader.batch_size + idx_in_batch
                 image_name = os.path.basename(image_paths[image_id])
                 output_path = output_folder+f"{image_name.split('.')[0]}_t_{timesteps}.nii.gz"
                 #if the output file doesn't exist already

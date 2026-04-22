@@ -82,15 +82,6 @@ def main():
             dtprint("Launching anomaly_detection_inference with no abs value for the anomaly maps")
             launch_anomaly_detection_inference(args, no_abs_value=True)
         
-        if step=="anomaly_detection_inference_20x" and rank==0:
-            from anomaly_detection_inference import launch_anomaly_detection_inference
-            dtprint("Launching anomaly_detection_inference with 20x inferences")
-            launch_anomaly_detection_inference(args, nb_inferences=20)
-        
-        if step=="anomaly_detection_inference_20x_no_abs_value" and rank==0:
-            from anomaly_detection_inference import launch_anomaly_detection_inference
-            dtprint("Launching anomaly_detection_inference with 20x inferences and no abs value for the anomaly maps")
-            launch_anomaly_detection_inference(args, no_abs_value=True, nb_inferences=20)
         
 
 
