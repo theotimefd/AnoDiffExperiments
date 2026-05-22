@@ -8,7 +8,6 @@ from compute_metrics_reconstruction import launch_compute_metrics_reconstruction
 from compute_metrics_anomaly_detection import launch_compute_metrics_anomaly_detection
 from utils.compute_select_params_cpu import launch_compute_select_params_cpu
 from anomaly_detection_inference import launch_anomaly_detection_inference
-from anomaly_detection_inference_20x import launch_anomaly_detection_inference as launch_anomaly_detection_inference_20x
 #from compute_metrics_thor_anomaly_detection import launch_compute_metrics_thor_anomaly_detection
 from utils.utils import dtprint
 
@@ -79,14 +78,6 @@ def main():
             dtprint("Launching anomaly_detection_inference with no abs value for the anomaly maps")
             launch_anomaly_detection_inference(args, no_abs_value=True)
                 
-        if step=="anomaly_detection_inference_20x" and rank==0:
-            dtprint("Launching anomaly_detection_inference with 20x inferences")
-            launch_anomaly_detection_inference_20x(args)
-        
-        if step=="anomaly_detection_inference_20x_no_abs_value" and rank==0:
-            dtprint("Launching anomaly_detection_inference with 20x inferences and no abs value for the anomaly maps")
-            launch_anomaly_detection_inference_20x(args, no_abs_value=True)
-        
         
 
 

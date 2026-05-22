@@ -54,13 +54,15 @@ DEVICE_TYPE = "cuda:0"
 
 
 
-def launch_anomaly_detection_inference(args, no_abs_value=False, nb_inferences=1):
+def launch_anomaly_detection_inference(args, no_abs_value=False):
     # Two parts : the first 50% of the test data is used to select the best noise timestep value and best threshold.
     # The second 50% is used to compute the final IOU and DICE metrics with these best values.
     DEVICE_TYPE = "cuda:0"
     device = torch.device(DEVICE_TYPE)
 
     set_determinism(0)
+
+    nb_inferences = args.nb_inferences
     
     dtprint("launching anomaly detection inference with the following settings:")
     dtprint(f"no_abs_value: {no_abs_value}")
@@ -140,11 +142,11 @@ def launch_anomaly_detection_inference(args, no_abs_value=False, nb_inferences=1
         ano_dataset = anomaly_datasets.SOOP(args, batch_size=16, num_workers=4, groups_to_load=[group])
 
         if "flair" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 150
+            best_num_timesteps_large_group = 130
             best_num_timesteps_medium_group = 130
         elif "adc" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 90
-            best_num_timesteps_medium_group = 90
+            best_num_timesteps_large_group = 210
+            best_num_timesteps_medium_group = 130
         
         
 

@@ -124,20 +124,27 @@ def show_summary_figure(args, device, model, infer_scheduler,
         with torch.no_grad():
             with autocast(device_type="cuda", enabled=True):
 
-                stitched_pred = _run_patchwise_test_optim(
-                    image_batch.to(device),
-                    args.patch_size,
-                    args.dataset["patch_overlap"],
-                    args.dataset["patch_batch_size"],
-                    args.noise["type"],
-                    simplexObj,
-                    model,
-                    infer_scheduler,
-                    infer_timesteps,
-                    device,
-                )
+                stitched_preds = []
 
-                for idx, infered_volume in enumerate(stitched_pred):
+                for inference_idx in range(args.nb_inferences):
+
+                    stitched_pred = _run_patchwise_test_optim(
+                        image_batch.to(device),
+                        args.patch_size,
+                        args.dataset["patch_overlap"],
+                        args.dataset["patch_batch_size"],
+                        args.noise["type"],
+                        simplexObj,
+                        model,
+                        infer_scheduler,
+                        infer_timesteps,
+                        device,
+                    )
+                    stitched_preds.append(stitched_pred)
+
+                average_stitched_pred = torch.mean(torch.stack(stitched_preds, dim=0), dim=0)
+
+                for idx, infered_volume in enumerate(average_stitched_pred):
                     
                     normalized_infered_volume = torch.clamp(scale_intensity_from_histogram_peak(infered_volume, 2.0/7.0), 0.0, 1.0)
                     infered_maps[idx] = normalized_infered_volume[..., normalized_infered_volume.shape[-1]//2]

@@ -214,12 +214,12 @@ def make_anomaly_maps_optim(args, model, device,
                             infer_timesteps, 
                             output_folder, 
                             replace_existing_files=False, 
-                            no_abs_value=False,
-                            nb_inferences=1):
+                            no_abs_value=False):
     # multiple 2D inference stacked to make a 3D anomaly maps for a given nb timesteps
     # saves all the anomaly maps in the output_folder
     # reaplce_existing_files=False by default
 
+    nb_inferences = args.nb_inferences
 
     os.makedirs(output_folder, exist_ok=True)    
 

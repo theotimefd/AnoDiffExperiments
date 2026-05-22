@@ -239,8 +239,9 @@ def show_summary_figure(args, device, model, infer_scheduler,
                         metrics_result_text, 
                         ROOT_DIR, 
                         EXPERIMENT_NAME, 
-                        SUB_EXPERIMENT_NAME,
-                        nb_inferences=1):
+                        SUB_EXPERIMENT_NAME):
+
+    nb_inferences = args.nb_inferences
 
     
     for i,(image_batch, mask_batch) in enumerate(tqdm(zip(image_loader, mask_loader))): # i=6 batch is nice
@@ -564,9 +565,9 @@ def launch_compute_metrics_anomaly_detection(args):
                 dtprint("Generating raw anomaly maps for different timesteps...")
                 os.makedirs(ANOMALY_MAPS_DIR+f"{group}/", exist_ok=True)
                 
-                #for timesteps in num_timesteps_to_try:
                 #for timesteps in num_timesteps_to_try[::-1]: #TODO 
-                for timesteps in [args.timestep_to_try]:
+                #for timesteps in args.timesteps_to_try:
+                for timesteps in num_timesteps_to_try:
                     #dtprint(f"I am going through the timesteps in reverse order, change this behavior at line {sys._getframe().f_lineno} if you want to go in normal order")
                     # start from the highest number of timesteps, to have the best chance of having the best params already computed when we start the compute_select_params_cpu part, since it starts with the highest number of timesteps
                     make_anomaly_maps(args, model, device, 
