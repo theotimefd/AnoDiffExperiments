@@ -13,36 +13,134 @@ import json
 DEVICE_TYPE = "cuda:0"
 device = torch.device(DEVICE_TYPE)
 
-# ADC large group 1x
-adc_large_1x_timesteps = 190
-adc_large_1x_median_filter_size = 7
-adc_large_1x_threshold = 0.06
-adc_large_1x_erosion_dilation = 4
-adc_large_1x_fill_holes = True
+params = {
+    "adc": {
+        "large": {
+            "1x": {
+                "timesteps": 190,
+                "median_filter_size": 7,
+                "threshold": 0.06,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            },
+            "10x": {
+                "timesteps": 130,
+                "median_filter_size": 7,
+                "threshold": 0.04,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            }
+        },
+        "medium": {
+            "1x": {
+                "timesteps": 90,
+                "median_filter_size": 5,
+                "threshold": 0.04,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            },
+            "10x": {
+                "timesteps": 90,
+                "median_filter_size": 0,
+                "threshold": 0.02,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            }
+        }
+    },
+    "flair": {
+        "large": {
+            "1x": {
+                "timesteps": 170,
+                "median_filter_size": 7,
+                "threshold": 0.06,
+                "erosion_dilation": 2,
+                "fill_holes": True
+            },
+            "10x": {
+                "timesteps": 150,
+                "median_filter_size": 7,
+                "threshold": 0.06,
+                "erosion_dilation": 1,
+                "fill_holes": True
+            }
+        },
+        "medium": {
+            "1x": {
+                "timesteps": 130,
+                "median_filter_size": 5,
+                "threshold": 0.06,
+                "erosion_dilation": 2,
+                "fill_holes": False
+            },
+            "10x": {
+                "timesteps": 130,
+                "median_filter_size": 7,
+                "threshold": 0.06,
+                "erosion_dilation": 1,
+                "fill_holes": False
+            }
+        }
+    },
+    "combined": {
+        "large": {
+            "1x": {
+                "timesteps": 210,
+                "median_filter_size": 5,
+                "threshold": 0.065,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            },
+            "10x": {
+                "timesteps": 130,
+                "median_filter_size": 5,
+                "threshold": 0.05,
+                "erosion_dilation": 2,
+                "fill_holes": True
+            }
+        },
+        "medium": {
+            "1x": {
+                "timesteps": 130,
+                "median_filter_size": 0,
+                "threshold": 0.03,
+                "erosion_dilation": 4,
+                "fill_holes": True
+            },
+            "10x": {
+                
+            }
+        }
+    }
+}
 
-# ADC large group 10x
-adc_large_10x_timesteps = 130
-adc_large_10x_median_filter_size = 7
-adc_large_10x_threshold = 0.04
-adc_large_10x_erosion_dilation = 4
-adc_large_10x_fill_holes = True
+
+current_contrast = "combined"
+current_group = "medium"
+
+
+if current_contrast == "adc":
+    exp_name = "2_2"
+elif current_contrast == "flair":
+    exp_name = "3_2"
 
 ROOT_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 
-anomaly_maps_1x_dir = ROOT_DIR + "datasets/anomaly_maps/exp_3_2_fixed/large/" 
-anomaly_maps_10x_dir = ROOT_DIR + "datasets/anomaly_maps/exp_3_2_10x_inference/large/" 
+anomaly_maps_1x_dir = ROOT_DIR + f"datasets/anomaly_maps/exp_{exp_name}_fixed/{current_group}/" 
+anomaly_maps_10x_dir = ROOT_DIR + f"datasets/anomaly_maps/exp_{exp_name}_10x_inference/{current_group}/" 
 
-masks_dir = ROOT_DIR + "datasets/final_soop_dataset_small/masks_combined_registered/" 
+masks_dir = ROOT_DIR + f"datasets/final_soop_dataset_small/masks_combined_registered/" 
 
 
-segmentation_1x_no_post_proc_folder = ROOT_DIR + "datasets/segmentations/exp_3_2_fixed/segmentation_1x_no_post_proc/" #TODO finish path
+
+segmentation_1x_no_post_proc_folder = ROOT_DIR + f"datasets/segmentations/exp_{exp_name}_fixed/segmentation_1x_no_post_proc/{current_group}/"
 os.makedirs(segmentation_1x_no_post_proc_folder, exist_ok=True)
-segmentation_1x_with_post_proc_folder = ROOT_DIR + "datasets/segmentations/exp_3_2_fixed/segmentation_1x_with_post_proc/" #TODO finish path
+segmentation_1x_with_post_proc_folder = ROOT_DIR + f"datasets/segmentations/exp_{exp_name}_fixed/segmentation_1x_with_post_proc/{current_group}/"
 os.makedirs(segmentation_1x_with_post_proc_folder, exist_ok=True)
 
-segmentation_10x_no_post_proc_folder = ROOT_DIR + "datasets/segmentations/exp_3_2_10x_inference/segmentation_10x_no_post_proc/" #TODO finish path
+segmentation_10x_no_post_proc_folder = ROOT_DIR + f"datasets/segmentations/exp_{exp_name}_10x_inference/segmentation_10x_no_post_proc/{current_group}/"
 os.makedirs(segmentation_10x_no_post_proc_folder, exist_ok=True)
-segmentation_10x_with_post_proc_folder = ROOT_DIR + "datasets/segmentations/exp_3_2_10x_inference/segmentation_10x_with_post_proc/" #TODO finish path
+segmentation_10x_with_post_proc_folder = ROOT_DIR + f"datasets/segmentations/exp_{exp_name}_10x_inference/segmentation_10x_with_post_proc/{current_group}/"
 os.makedirs(segmentation_10x_with_post_proc_folder, exist_ok=True)
 
 
@@ -81,7 +179,7 @@ def launch_compute():
             mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).to(device)
 
         # no post processing
-        segmentation_no_post_proc = ano_map > adc_large_1x_threshold
+        segmentation_no_post_proc = ano_map > params[current_contrast][current_group]["1x"]["threshold"]
 
         iou_scores, dice_scores, hausdorff_distances, precision_scores, recall_scores, f1_scores = compute_scores(segmentation_no_post_proc, mask)
 
@@ -105,22 +203,22 @@ def launch_compute():
         # apply median filter
         anomaly_map_np = ano_map.cpu().numpy()
         for b in range(anomaly_map_np.shape[0]):
-            anomaly_map_np[b] = median_filter(anomaly_map_np[b], size=adc_large_1x_median_filter_size)
+            anomaly_map_np[b] = median_filter(anomaly_map_np[b], size=params[current_contrast][current_group]["1x"]["median_filter_size"])
         anomaly_map = torch.from_numpy(anomaly_map_np).to(device)
 
 
         # make the segmentation map with threshold
-        ano_segmentation = anomaly_map > adc_large_1x_threshold
+        ano_segmentation = anomaly_map > params[current_contrast][current_group]["1x"]["threshold"]
 
         # perform erosion if specified
-        if adc_large_1x_erosion_dilation > 0:
+        if params[current_contrast][current_group]["1x"]["erosion_dilation"] > 0:
             ano_segmentation_np = ano_segmentation.cpu().numpy()
             for b in range(ano_segmentation_np.shape[0]):
-                ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=adc_large_1x_erosion_dilation)
-                ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=adc_large_1x_erosion_dilation)
+                ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=params[current_contrast][current_group]["1x"]["erosion_dilation"])
+                ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=params[current_contrast][current_group]["1x"]["erosion_dilation"])
             ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
         
-        if adc_large_1x_fill_holes:
+        if params[current_contrast][current_group]["1x"]["fill_holes"]:
             ano_segmentation_np = ano_segmentation.cpu().numpy()
             for b in range(ano_segmentation_np.shape[0]):
                 ano_segmentation_np[b,0] = binary_fill_holes(ano_segmentation_np[b,0])
@@ -143,7 +241,7 @@ def launch_compute():
         }
 
     # 10x inference
-
+    """
     for ano_file in tqdm(os.listdir(anomaly_maps_10x_dir)):
         
         patient_nb = ano_file.split(".")[0]
@@ -158,7 +256,7 @@ def launch_compute():
             mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).to(device)
 
         # no post processing
-        segmentation_no_post_proc = ano_map > adc_large_10x_threshold
+        segmentation_no_post_proc = ano_map > params[current_contrast][current_group]["10x"]["threshold"]
 
         iou_scores, dice_scores, hausdorff_distances, precision_scores, recall_scores, f1_scores = compute_scores(segmentation_no_post_proc, mask)
 
@@ -182,22 +280,22 @@ def launch_compute():
         # apply median filter
         anomaly_map_np = ano_map.cpu().numpy()
         for b in range(anomaly_map_np.shape[0]):
-            anomaly_map_np[b] = median_filter(anomaly_map_np[b], size=adc_large_10x_median_filter_size)
+            anomaly_map_np[b] = median_filter(anomaly_map_np[b], size=params[current_contrast][current_group]["10x"]["median_filter_size"])
         anomaly_map = torch.from_numpy(anomaly_map_np).to(device)
 
 
         # make the segmentation map with threshold
-        ano_segmentation = anomaly_map > adc_large_10x_threshold
+        ano_segmentation = anomaly_map > params[current_contrast][current_group]["10x"]["threshold"]
 
         # perform erosion if specified
-        if adc_large_10x_erosion_dilation > 0:
+        if params[current_contrast][current_group]["10x"]["erosion_dilation"] > 0:
             ano_segmentation_np = ano_segmentation.cpu().numpy()
             for b in range(ano_segmentation_np.shape[0]):
-                ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=adc_large_10x_erosion_dilation)
-                ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=adc_large_10x_erosion_dilation)
+                ano_segmentation_np[b,0] = binary_erosion(ano_segmentation_np[b,0], iterations=params[current_contrast][current_group]["10x"]["erosion_dilation"])
+                ano_segmentation_np[b,0] = binary_dilation(ano_segmentation_np[b,0], iterations=params[current_contrast][current_group]["10x"]["erosion_dilation"])
             ano_segmentation = torch.from_numpy(ano_segmentation_np).to(device)
         
-        if adc_large_10x_fill_holes:
+        if params[current_contrast][current_group]["10x"]["fill_holes"]:
             ano_segmentation_np = ano_segmentation.cpu().numpy()
             for b in range(ano_segmentation_np.shape[0]):
                 ano_segmentation_np[b,0] = binary_fill_holes(ano_segmentation_np[b,0])
@@ -218,9 +316,10 @@ def launch_compute():
             "recall": recall_scores,
             "f1_score": f1_scores
         }
+        """
     
 
-    with open(ROOT_DIR + "AnoDiffExperiments/analysis_nb_inferences_per_patient/scores_patients_2d_ddpm_flair_verify.json", "w") as f:
+    with open(ROOT_DIR + f"AnoDiffExperiments/analysis_per_patient/scores_patients_2d_ddpm_{current_contrast}_{current_group}.json", "w") as f:
         json.dump(scores_patients, f, cls=NumpyEncoder)
 
 

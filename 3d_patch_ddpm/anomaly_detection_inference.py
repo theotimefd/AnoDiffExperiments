@@ -140,10 +140,10 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
 
         elif "adc" in args.dataset["name"].lower():
             best_num_timesteps_large_group = 90
-            best_num_timesteps_medium_group = 70
+            best_num_timesteps_medium_group = 90
             best_num_timesteps_small_group = 50
         
-        group = "small"
+        group = "medium"
 
         ano_dataset = anomaly_datasets.SOOP(args, groups_to_load=[group])
 
@@ -229,7 +229,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
 
 
         elif "adc" in args.dataset["name"].lower():
-            best_num_timesteps_large_group = 100
+            best_num_timesteps_large_group = 90
             best_median_filter_size_large_group=5
             best_threshold_large_group=0.06
             best_erosion_dilation_iterations_large_group=2

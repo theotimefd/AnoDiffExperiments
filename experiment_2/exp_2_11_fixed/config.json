@@ -1,28 +1,20 @@
 {
     "experiment_name": "experiment_2",
-    "sub_experiment_name": "exp_2_4_fixed",
-    "description": "3D patch DDPM on adc with simplex noise",
-    "pipeline": ["anomaly_detection_inference"],
+    "sub_experiment_name": "exp_2_11_fixed",
+    "description": "3D LDM on flair",
+    "pipeline": ["compute_metrics_anomaly_detection_diffusion"],
+    "resume_ckpt": false,
     "spatial_dims": 3,
-    "spatial_dims_val_test": 3,
+    "latent_channels": 16,
     "image_size": 128,
     "nb_inferences":1,
     "root_dir":"/bettik/PROJECTS/pr-gin5_aini/fehrdelt/",
     "dataset":{
         "name": "final_adc_dataset_small_added_ixi",
         "test": "soop",
-        "save_anomaly_maps":true,
-        "batch_size": 64,
-        "patch_batch_size":64,
-        "patch_overlap": [16, 16, 16],
-        "num_workers": 2,
-        "slice_indexes_start":22,
-        "slice_indexes_end": 94
+        "save_anomaly_maps": true
     },
-    "patch_size": [64, 64, 64],
     "show_summary_figures": true,
-    "slice_indexes_start":22,
-    "slice_indexes_end": 94,
     "train_transforms": {
         "_target_": "monai.transforms.Compose",
         "transforms": [
@@ -36,7 +28,7 @@
             "_target_": "monai.transforms.RandAffine", "prob": 0.5, "rotate_range": [0.1, 0.1, 0.1]
         },
         {
-            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
+            "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
         },
         {
             "_target_": "monai.transforms.RandScaleCrop", "roi_scale":0.9, "max_roi_scale":1.1, "random_size":true
@@ -52,11 +44,7 @@
         },
         {
             "_target_": "utils.custom_transforms.SetBackgroundToZero"
-        },
-        {
-            "_target_": "monai.transforms.RandSpatialCrop", "roi_size": "@patch_size", "random_size": false
-        }
-    ]
+        }]
     },
     "val_transforms": {
         "_target_": "monai.transforms.Compose",
@@ -71,7 +59,7 @@
                 "_target_": "monai.transforms.ResizeWithPadOrCrop", "spatial_size":["@image_size", "@image_size", "@image_size"]
             },
             {
-                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0, "bins": 1000
+                "_target_": "utils.custom_transforms.ScaleIntensityFromHistogramPeak", "target_value": 200.0
             },
             {
                 "_target_": "monai.transforms.ScaleIntensityRange", "a_min":0.0, "a_max":700.0, "b_min":0.0, "b_max":1.0, "clip":true
@@ -82,7 +70,7 @@
         ]
     },
     "noise": {
-        "type": "simplex",
+        "type": "gaussian",
         "schedule":"cosine",
         "simplex_octaves":6, 
         "simplex_persistence":0.8, 
@@ -93,13 +81,63 @@
         "noise_rate_min": 0.05,
         "noise_rate_max": 0.25,
         "noise_timesteps_interval": 20,
-        "noise_rate_visualize":0.25
+        "noise_rate_visualize":0.25,
+        "beta_start": 0.0015,
+        "beta_end": 0.0195
     },
-    "network_def": {
-        "_target_": "monai.networks.nets.DiffusionModelUNet",
+    "autoencoder_def": {
+        "_target_": "monai.networks.nets.AutoencoderKL",
         "spatial_dims": "@spatial_dims",
         "in_channels": 1,
         "out_channels": 1,
+        "latent_channels": "@latent_channels",
+        "channels": [
+            64,
+            128,
+            256,
+            512
+        ],
+        "num_res_blocks": 2,
+        "norm_num_groups": 32,
+        "norm_eps": 1e-06,
+        "attention_levels": [
+            false,
+            false,
+            false,
+            false
+        ],
+        "with_encoder_nonlocal_attn": false,
+        "with_decoder_nonlocal_attn": false
+    },
+    "autoencoder_train": {
+        "batch_size": 4,
+        "num_workers": 2,
+        "perceptual_weight": 0.001,
+        "kl_weight": 1e-7,
+        "recon_loss": "l1",
+        "max_epochs": 200,
+        "val_interval": 10,
+        "optimizer_autoencoder": {
+            "type": "Adam",
+            "lr": 1e-5,
+            "lr_scheduler":"none"
+        },
+        "optimizer_discriminator": {
+            "type": "Adam",
+            "lr": 1e-5,
+            "lr_scheduler":"none"
+        },
+        "discriminator_autoencoder": {
+            "type": "Adam",
+            "lr": 1e-5,
+            "lr_scheduler":"none"
+        }
+    },
+    "diffusion_network_def": {
+        "_target_": "monai.networks.nets.DiffusionModelUNet",
+        "spatial_dims": "@spatial_dims",
+        "in_channels": "@latent_channels",
+        "out_channels": "@latent_channels",
         "channels":[32, 64, 64, 64],
         "attention_levels":[false, true, true, true],
         "num_head_channels":8,
@@ -107,13 +145,12 @@
     },
     "diffusion_train": {
         "max_epochs": 600,
+        "last_epoch": 223,
+        "last_best_val_recon_epoch_loss": 0.6344,
         "val_interval": 10,
-        "resume_checkpoint": true,
-        "last_checkpoint_epoch":439,
-        "last_best_val_loss":0.003712,
         "optimizer": {
             "type": "Adam",
-            "lr": 1.4e-5
+            "lr": 1e-5
         },
         "lr_scheduler": "none",
         "lr_scheduler_milestones": [1000],

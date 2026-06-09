@@ -1,5 +1,0 @@
-failed_skullstrip_final_t1_dataset_oasis = []
-
-545
-554
-633
