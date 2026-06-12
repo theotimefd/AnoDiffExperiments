@@ -345,6 +345,73 @@ def _finalize_param_search_checkpoint_csv(checkpoint_csv_path,
     return best_params, best_iou_score
 
 
+def _extract_patient_id_from_anomaly_file(anomaly_file):
+    """Derive a patient identifier from an anomaly map filename."""
+    anomaly_stem = os.path.basename(anomaly_file)
+    if anomaly_stem.endswith(".nii.gz"):
+        anomaly_stem = anomaly_stem[:-7]
+    return anomaly_stem.split("_")[0]
+
+
+def _initialize_patient_param_search_checkpoint_csv(checkpoint_csv_path):
+    """Create the checkpoint CSV used by the per-patient search variant."""
+    with open(checkpoint_csv_path, "w", newline="", encoding="utf-8") as checkpoint_file:
+        writer = csv.writer(checkpoint_file)
+        writer.writerow([
+            "patient_id",
+            "anomaly_file",
+            "timesteps",
+            "threshold",
+            "median_filter_size",
+            "erosion_dilation_iterations",
+            "binary_fill_holes",
+            "IOU",
+            "DICE",
+        ])
+
+
+def _append_patient_param_search_checkpoint_csv(checkpoint_csv_path,
+                                                anomaly_file,
+                                                local_iou_scores,
+                                                local_dice_scores):
+    """Append one patient's score rows to the per-patient checkpoint CSV."""
+    patient_id = _extract_patient_id_from_anomaly_file(anomaly_file)
+
+    with open(checkpoint_csv_path, "a", newline="", encoding="utf-8") as checkpoint_file:
+        writer = csv.writer(checkpoint_file)
+
+        for idx, iou_val in local_iou_scores.items():
+            writer.writerow([
+                patient_id,
+                anomaly_file,
+                int(idx[0]),
+                format(float(idx[1]), ".17g"),
+                int(idx[2]),
+                int(idx[3]),
+                int(idx[4]),
+                format(float(iou_val), ".17g"),
+                format(float(local_dice_scores[idx]), ".17g"),
+            ])
+
+
+def _load_patient_param_search_checkpoint_csv(checkpoint_csv_path):
+    """Load the per-patient checkpoint CSV into IOU and DICE dataframes."""
+    patient_scores_df = pd.read_csv(checkpoint_csv_path)
+    patient_scores_df = patient_scores_df.set_index([
+        "patient_id",
+        "timesteps",
+        "threshold",
+        "median_filter_size",
+        "erosion_dilation_iterations",
+        "binary_fill_holes",
+    ]).sort_index()
+
+    iou_scores_df = patient_scores_df[["IOU"]].copy()
+    dice_scores_df = patient_scores_df[["DICE"]].copy()
+
+    return iou_scores_df, dice_scores_df
+
+
 def compute_select_params_multithreaded_checkpointed(args,
                                                      anomaly_maps_folder,
                                                      masks_folder,
@@ -355,7 +422,7 @@ def compute_select_params_multithreaded_checkpointed(args,
                                                      erosion_dilation_iterations_to_try,
                                                      binary_fill_holes_to_try,
                                                      output_dir,
-                                                     output_prefix="param_search"):
+                                                     exp_name="soop_large_group"):
     """Compute parameter-search scores while checkpointing partial results to disk.
 
     This is the disk-backed counterpart to
@@ -393,10 +460,10 @@ def compute_select_params_multithreaded_checkpointed(args,
 
     os.makedirs(output_dir, exist_ok=True)
 
-    checkpoint_csv_path = os.path.join(output_dir, f"{output_prefix}_checkpoint.csv")
-    iou_scores_csv_path = os.path.join(output_dir, f"{output_prefix}_iou_scores.csv")
-    dice_scores_csv_path = os.path.join(output_dir, f"{output_prefix}_dice_scores.csv")
-    best_params_csv_path = os.path.join(output_dir, f"{output_prefix}_best_params.csv")
+    checkpoint_csv_path = os.path.join(output_dir, f"checkpoint_{exp_name}.csv")
+    iou_scores_csv_path = os.path.join(output_dir, f"iou_scores_param_search_{exp_name}.csv")
+    dice_scores_csv_path = os.path.join(output_dir, f"dice_scores_param_search_{exp_name}.csv")
+    best_params_csv_path = os.path.join(output_dir, f"best_params_{exp_name}.csv")
 
     _initialize_param_search_checkpoint_csv(
         checkpoint_csv_path,
@@ -458,6 +525,99 @@ def compute_select_params_multithreaded_checkpointed(args,
         "best_params": best_params,
         "best_iou_score": best_iou_score,
     }
+
+
+def compute_select_params_multithreaded_checkpointed_per_patient(args,
+                                                                 anomaly_maps_folder,
+                                                                 masks_folder,
+                                                                 total_nb_images,
+                                                                 num_timesteps_to_try,
+                                                                 thresholds_to_try,
+                                                                 median_filter_sizes_to_try,
+                                                                 erosion_dilation_iterations_to_try,
+                                                                 binary_fill_holes_to_try,
+                                                                 output_dir,
+                                                                 output_prefix="param_search"):
+    """Compute parameter-search scores while keeping one row per patient.
+
+    This variant mirrors :func:`compute_select_params_multithreaded_checkpointed`
+    but writes a raw row for every patient and parameter combination instead of
+    accumulating dataset-wide sums. The resulting dataframes preserve the
+    patient identity in their index so the caller can inspect individual IOU and
+    DICE scores without averaging them across the dataset.
+
+    Args:
+        args: Experiment configuration namespace used by downstream scoring
+            helpers.
+        anomaly_maps_folder: Directory containing saved anomaly map NIfTI
+            files.
+        masks_folder: Directory containing the corresponding ground-truth mask
+            files.
+        total_nb_images: Kept for API parity with the averaged checkpointed
+            variant; it is not used by this per-patient version.
+        num_timesteps_to_try: Iterable of diffusion timesteps to evaluate.
+        thresholds_to_try: Iterable of anomaly-score thresholds to evaluate.
+        median_filter_sizes_to_try: Iterable of median filter sizes to
+            evaluate.
+        erosion_dilation_iterations_to_try: Iterable of morphology iteration
+            counts to evaluate.
+        binary_fill_holes_to_try: Iterable of binary fill-holes flags to
+            evaluate.
+        output_dir: Directory where the checkpoint CSV will be written.
+        output_prefix: Prefix used for all generated CSV filenames.
+
+    Returns:
+        A tuple ``(iou_scores_df, dice_scores_df)`` whose indexes include the
+        patient identifier and the full parameter combination for each row.
+    """
+
+    tprint("launching compute_select_params_multithreaded_checkpointed_per_patient")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    checkpoint_csv_path = os.path.join(output_dir, f"{output_prefix}_patient_checkpoint.csv")
+
+    _initialize_patient_param_search_checkpoint_csv(checkpoint_csv_path)
+
+    dtprint(f"num timesteps to try: {num_timesteps_to_try}")
+
+    anomaly_files = [entry.name for entry in os.scandir(anomaly_maps_folder) if entry.is_file() and entry.name.endswith(".nii.gz")]
+    anomaly_files = [f for f in anomaly_files if int(f.split('.')[0].split('_')[-1]) in num_timesteps_to_try]
+
+    if not anomaly_files:
+        raise RuntimeError(f"No anomaly map files found in '{anomaly_maps_folder}'.")
+
+    process_func = partial(
+        process_anomaly_file.process_anomaly_file,
+        anomaly_maps_folder=anomaly_maps_folder,
+        masks_folder=masks_folder,
+        thresholds_to_try=thresholds_to_try,
+        median_filter_sizes_to_try=median_filter_sizes_to_try,
+        erosion_dilation_iterations_to_try=erosion_dilation_iterations_to_try,
+        binary_fill_holes_to_try=binary_fill_holes_to_try,
+    )
+
+    max_workers = min(64, mp.cpu_count())
+    dtprint(f"Using max_workers={max_workers} for multiprocessing")
+    ctx = mp.get_context("spawn")
+
+    if len(anomaly_files) == 1 or max_workers == 1:
+        for file_name in tqdm(anomaly_files, total=len(anomaly_files), desc="Processing anomaly maps"):
+            local_iou_scores, local_dice_scores = process_func(file_name)
+            _append_patient_param_search_checkpoint_csv(checkpoint_csv_path, file_name, local_iou_scores, local_dice_scores)
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx) as executor:
+            futures = {executor.submit(process_func, file_name): file_name for file_name in anomaly_files}
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing anomaly maps"):
+                file_name = futures[future]
+                local_iou_scores, local_dice_scores = future.result()
+                _append_patient_param_search_checkpoint_csv(checkpoint_csv_path, file_name, local_iou_scores, local_dice_scores)
+
+    dtprint("multiprocesses all finished")
+
+    iou_scores_df, dice_scores_df = _load_patient_param_search_checkpoint_csv(checkpoint_csv_path)
+
+    return iou_scores_df, dice_scores_df
 
 
 def launch_compute_select_params_cpu(args):
@@ -598,7 +758,7 @@ def launch_compute_select_params_cpu(args):
             dtprint("Large group")
             dtprint(f"Computing best parameters with CPU...")
             #iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_large_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-            iou_scores_df_large_group, dice_scores_df_large_group = compute_select_params_multithreaded_checkpointed(args, 
+            output = compute_select_params_multithreaded_checkpointed(args, 
                                                                                                                      ANOMALY_MAPS_DIR_SELECT_PARAMS+"large/", 
                                                                                                                      ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", 
                                                                                                                      len(ano_dataset.test_anomaly_large_images_select_params), 
@@ -607,8 +767,11 @@ def launch_compute_select_params_cpu(args):
                                                                                                                      median_filter_sizes_to_try, 
                                                                                                                      erosion_dilation_iterations_to_try, 
                                                                                                                      binary_fill_holes_to_try,
-                                                                                                                     output_dir=SUB_EXPERIMENT_DIR)
-        
+                                                                                                                     output_dir=SUB_EXPERIMENT_DIR,
+                                                                                                                     exp_name=f"{args.dataset["test"]}_large_group")
+            
+            dtprint(output)
+            """
             iou_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_large_group.csv")
             dice_scores_df_large_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_large_group.csv")
 
@@ -632,6 +795,7 @@ def launch_compute_select_params_cpu(args):
             metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_large_group}"
             metrics_result_text += "\n"
             dtprint(metrics_result_text)
+            """
 
         # --------------------------------- medium group
         os.makedirs(ANOMALY_MAPS_DIR+"medium/", exist_ok=True)
@@ -641,7 +805,7 @@ def launch_compute_select_params_cpu(args):
             dtprint("Medium group")
             dtprint(f"Computing best parameters with CPU...")
             #iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_medium_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-            iou_scores_df_medium_group, dice_scores_df_medium_group = compute_select_params_multithreaded_checkpointed(args, 
+            output = compute_select_params_multithreaded_checkpointed(args, 
                                                                                                                        ANOMALY_MAPS_DIR_SELECT_PARAMS+"medium/", 
                                                                                                                        ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", 
                                                                                                                        len(ano_dataset.test_anomaly_medium_images_select_params), 
@@ -650,8 +814,10 @@ def launch_compute_select_params_cpu(args):
                                                                                                                        median_filter_sizes_to_try, 
                                                                                                                        erosion_dilation_iterations_to_try, 
                                                                                                                        binary_fill_holes_to_try,
-                                                                                                                       output_dir=SUB_EXPERIMENT_DIR)
-
+                                                                                                                       output_dir=SUB_EXPERIMENT_DIR,
+                                                                                                                       exp_name=f"{args.dataset["test"]}_medium_group")
+            dtprint(output)
+            """
             iou_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_medium_group.csv")
             dice_scores_df_medium_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_medium_group.csv")
 
@@ -675,6 +841,7 @@ def launch_compute_select_params_cpu(args):
             metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_medium_group}"
             metrics_result_text += "\n"
             tprint(metrics_result_text)
+            """
 
         # --------------------------------- small group
         os.makedirs(ANOMALY_MAPS_DIR+"small/", exist_ok=True)
@@ -684,7 +851,7 @@ def launch_compute_select_params_cpu(args):
             dtprint("Small group")
             dtprint(f"Computing best parameters with CPU...")
             #iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded(args, ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", len(ano_dataset.test_anomaly_small_images_select_params), num_timesteps_to_try, thresholds_to_try, median_filter_sizes_to_try, erosion_dilation_iterations_to_try, binary_fill_holes_to_try)
-            iou_scores_df_small_group, dice_scores_df_small_group = compute_select_params_multithreaded_checkpointed(args, 
+            output = compute_select_params_multithreaded_checkpointed(args, 
                                                                                                                      ANOMALY_MAPS_DIR_SELECT_PARAMS+"small/", 
                                                                                                                      ROOT_DIR+f"datasets/final_{args.dataset['test']}_dataset_small/masks_combined_registered/", 
                                                                                                                      len(ano_dataset.test_anomaly_small_images_select_params), 
@@ -693,9 +860,12 @@ def launch_compute_select_params_cpu(args):
                                                                                                                      median_filter_sizes_to_try, 
                                                                                                                      erosion_dilation_iterations_to_try, 
                                                                                                                      binary_fill_holes_to_try,
-                                                                                                                     output_dir=SUB_EXPERIMENT_DIR)
+                                                                                                                     output_dir=SUB_EXPERIMENT_DIR,
+                                                                                                                     exp_name=f"{args.dataset["test"]}_small_group")
             
+            dtprint(output)
 
+            """
             iou_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"iou_scores_param_search_{args.dataset['test']}_small_group.csv")
             dice_scores_df_small_group.to_csv(SUB_EXPERIMENT_DIR+f"dice_scores_param_search_{args.dataset['test']}_small_group.csv")
 
@@ -719,6 +889,7 @@ def launch_compute_select_params_cpu(args):
             metrics_result_text += f"Best Binary Fill Holes: {best_binary_fill_holes_small_group}"
             metrics_result_text += "\n"
             tprint(metrics_result_text)
+            """
     
     if args.dataset["test"] == "soop_fast":
         

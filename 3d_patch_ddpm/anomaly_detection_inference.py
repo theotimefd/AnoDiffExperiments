@@ -156,7 +156,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
 
         else:
             output_folder = f"{ANOMALY_MAPS_DIR}{group}/"
-            os.makedirs(output_folder)
+            os.makedirs(output_folder, exist_ok=True)
         
         dtprint(f"saving anomaly maps in {output_folder}")
         
@@ -168,8 +168,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
                                     infer_timesteps=best_num_timesteps_large_group, 
                                     output_folder=output_folder, 
                                     replace_existing_files=False, 
-                                    no_abs_value=no_abs_value,
-                                    nb_inferences=nb_inferences)
+                                    no_abs_value=no_abs_value)
         elif group == "medium":
             make_anomaly_maps_optim(args, model, device, 
                                     infer_scheduler=infer_scheduler, 
@@ -178,8 +177,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
                                     infer_timesteps=best_num_timesteps_medium_group, 
                                     output_folder=output_folder, 
                                     replace_existing_files=False, 
-                                    no_abs_value=no_abs_value,
-                                    nb_inferences=nb_inferences)
+                                    no_abs_value=no_abs_value)
         
         elif group == "small":
             make_anomaly_maps_optim(args, model, device, 
@@ -189,8 +187,7 @@ def launch_anomaly_detection_inference(args, no_abs_value=False):
                                     infer_timesteps=best_num_timesteps_small_group, 
                                     output_folder=output_folder, 
                                     replace_existing_files=False, 
-                                    no_abs_value=no_abs_value,
-                                    nb_inferences=nb_inferences)
+                                    no_abs_value=no_abs_value)
         
         
         #tprint(metrics_result_text)

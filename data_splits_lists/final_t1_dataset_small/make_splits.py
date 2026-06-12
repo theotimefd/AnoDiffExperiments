@@ -4,28 +4,38 @@ import random
 # Set the random seed for reproducibility
 random.seed(42)
 
-BETTIK_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
+#BETTIK_DIR = "/bettik/PROJECTS/pr-gin5_aini/fehrdelt/"
 #BETTIK_DIR = "/home/theotime/bettik/"
-#BETTIK_DIR = "/home/fehrdelt/bettik/"
+BETTIK_DIR = "/home/fehrdelt/bettik/"
 
 
-final_t1_dataset_dallas = "datasets/final_t1_dataset_small/dallas_registered/"
-
-
-
-filelist_dallas_t1 = os.listdir(BETTIK_DIR+final_t1_dataset_dallas)
+final_dataset_dallas = "datasets/final_t1_dataset_small/dallas_registered/"
+final_dataset_ixi = "datasets/final_t1_dataset_small/ixi_registered/"
+final_dataset_oasis = "datasets/final_t1_dataset_small/oasis_registered/"
 
 
 
-random.shuffle(filelist_dallas_t1)
+filelist_dallas = os.listdir(BETTIK_DIR+final_dataset_dallas)
+filelist_dallas = [final_dataset_dallas + item for item in filelist_dallas]
+
+filelist_ixi = os.listdir(BETTIK_DIR+final_dataset_ixi)
+filelist_ixi = [final_dataset_ixi + item for item in filelist_ixi]
+
+filelist_oasis = os.listdir(BETTIK_DIR+final_dataset_oasis)
+filelist_oasis = [final_dataset_oasis + item for item in filelist_oasis]
 
 
-cutoff = int(0.8 * len(filelist_dallas_t1))
-train_sublist = filelist_dallas_t1[:cutoff]
 
-val_sublist = filelist_dallas_t1[cutoff:cutoff + (len(filelist_dallas_t1)-cutoff) // 2]
+combined_filelist = filelist_dallas + filelist_ixi + filelist_oasis
+random.shuffle(combined_filelist)
 
-test_sublist = filelist_dallas_t1[cutoff + (len(filelist_dallas_t1)-cutoff) // 2:]
+
+cutoff = int(0.8 * len(combined_filelist))
+train_sublist = combined_filelist[:cutoff]
+
+val_sublist = combined_filelist[cutoff:cutoff + (len(combined_filelist)-cutoff) // 2]
+
+test_sublist = combined_filelist[cutoff + (len(combined_filelist)-cutoff) // 2:]
 
 # files contained in exclude.csv will not be included in the splits
 EXCLUDE_FILES = True

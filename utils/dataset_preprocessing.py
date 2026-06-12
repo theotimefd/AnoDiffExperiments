@@ -14,7 +14,7 @@ import glob
 import nibabel as nib
 import SimpleITK as sitk
 from skimage.transform import resize
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExecutor
 
 
 # ----------------------------- Padding -----------------------------
@@ -356,3 +356,74 @@ def register_nifti_files_folder_multithreaded(fixed_reference, dataset_path, out
         futures = {executor.submit(process_file, (i, f)): f for i, f in enumerate(nifti_files)}
         for future in tqdm(as_completed(futures), total=len(futures)):
             result = future.result()
+
+
+# ----------------------------- Reorient to RAS -----------------------------
+# Single file
+def reorient_to_ras(nifti_path):
+    # Reorient images to RAS using nibabel
+    img = nib.load(nifti_path)
+    ras_img = nib.as_closest_canonical(img)
+    return ras_img
+
+# Folder
+def reorient_nifti_files_folder(input_folder, output_folder):
+    """
+    Reorients all NIfTI files in the input_folder to RAS using nibabel.
+
+    Parameters:
+    - input_folder: Path to the folder containing NIfTI files.
+    - output_folder: Path to save the reoriented NIfTI files.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    nifti_files = sorted(glob.glob(os.path.join(input_folder, "*.nii*")))
+    
+    if not nifti_files:
+        print("No NIfTI files found in the input folder.")
+        return
+
+    for nifti_file in tqdm(nifti_files):
+        output_filepath = os.path.join(output_folder, os.path.basename(nifti_file))
+        if not os.path.isfile(output_filepath):
+            ras_img = reorient_to_ras(nifti_file)
+            nib.save(ras_img, output_filepath)
+        else:
+            print("skipped reorienting already done")
+
+# Helper for multiprocessing
+def _process_reorient_to_ras(nifti_file, output_folder):
+    output_filepath = os.path.join(output_folder, os.path.basename(nifti_file))
+    if not os.path.isfile(output_filepath):
+        try:
+            ras_img = reorient_to_ras(nifti_file)
+            nib.save(ras_img, output_filepath)
+            return f"Processed {nifti_file}"
+        except Exception as e:
+            return f"Failed processing {nifti_file}: {str(e)}"
+    else:
+        return f"Skipped {nifti_file} (already done)"
+
+# Folder multiprocessing
+def reorient_nifti_files_folder_multiprocessing(input_folder, output_folder, max_workers=4):
+    """
+    Reorients all NIfTI files in the input_folder to RAS using nibabel with multiprocessing.
+
+    Parameters:
+    - input_folder: Path to the folder containing NIfTI files.
+    - output_folder: Path to save the reoriented NIfTI files.
+    - max_workers: Maximum number of processes to use.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    nifti_files = sorted(glob.glob(os.path.join(input_folder, "*.nii*")))
+    
+    if not nifti_files:
+        print("No NIfTI files found in the input folder.")
+        return
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_process_reorient_to_ras, f, output_folder): f for f in nifti_files}
+        for future in tqdm(as_completed(futures), total=len(futures)):
+            result = future.result()
+
